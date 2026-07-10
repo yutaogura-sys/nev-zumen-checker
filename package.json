@@ -1,0 +1,9 @@
+{
+  "name": "nev-drawing-checker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NeV補助金 図面チェックツール（統合版・R7補正）",
+  "scripts": {
+    "test": "node tests/run-all.js"
+  }
+}

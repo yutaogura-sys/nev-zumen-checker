@@ -1,0 +1,41 @@
+# ── 実案件図面・要件PDFの非公開徹底（設計方針: 2026-07-08）──────────
+# 会社名・個人名を含む実案件の図面や、配布不可の要件PDFをリポジトリに載せない。
+素材/
+正解事例/
+**/正解事例/
+**/素材/
+_正解事例/
+sample_drawings/
+samples/
+temp_images/
+_tmp_pdf_images/
+*.pdf
+!docs/**/*.pdf        # 公開してよい説明用PDFのみ明示的に許可する場合はここに置く
+
+# ── APIキー・秘密情報 ────────────────────────────────
+.env
+.env.*
+*apikey*
+*api_key*
+secrets.*
+
+# ── 回帰検証の結果・実案件パスを含むmanifest（実案件名を含みうる）────────
+tests/results/
+tests/_synthetic/
+tests/manifest.starter.json
+tests/manifest.local.json
+tests/manifest.synthetic.json
+tests/manifest.precision.json
+tests/check-ids.md
+
+# ── 依存・ビルド生成物 ──────────────────────────────
+node_modules/
+dist/
+.cache/
+
+# ── OS / エディタ ───────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

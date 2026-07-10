@@ -1,0 +1,20 @@
+[
+  {
+    "_comment": "recall測定用ラベル付きマニフェストの雛形（プレースホルダ）。file は tests/ からの相対パス or 絶対パス。",
+    "_comment2": "expect.items に『その図面の既知の状態』を項目IDごとに記載（IDは tests/check-ids.md 参照）。不備は fail/warn、正常は pass、非該当は na。",
+    "_comment3": "実行: GEMINI_API_KEY=xxx node tests/regression.js --manifest tests/manifest.local.json --model gemini-2.5-flash",
+    "_comment4": "実データ版は manifest.local.json 等の名前で作成（.gitignore対象）。実案件名を含むためコミットしない。"
+  },
+  {
+    "file": "（正解事例PDFのパスに差し替え）",
+    "type": "heimen",
+    "biz": "kiso",
+    "expect": { "items": { "drawing_name": "pass", "space_width_check": "warn" } }
+  },
+  {
+    "file": "（不備を含む図面のパスに差し替え。recall=見逃し率を測るにはこの種の事例が必須）",
+    "type": "keitou",
+    "biz": "kiso",
+    "expect": { "items": { "nev_main_breaker_capacity": "fail", "nev_title": "pass" } }
+  }
+]

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeV 図面チェック（案件まとめ）</title>
+  <link rel="stylesheet" href="css/style.css?v=20260710e">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <div><h1>NeV 図面チェック<span class="header-subtitle">案件まとめ（4図面一括＋整合性）</span></h1></div>
+      <div class="header-badge"><a href="index.html" style="color:#fff;text-decoration:underline;">個別チェックへ</a></div>
+    </div>
+  </header>
+  <div class="disclaimer"><div class="disclaimer-inner">本ツールはAIによる一次チェック補助です。最終判断は必ず人間が目視で行ってください。</div></div>
+
+  <main class="main">
+    <section class="card" id="apiKeySection">
+      <div class="card-header"><span class="step-number">1</span><h2>API キー・事業区分</h2></div>
+      <div class="card-body">
+        <div class="input-group">
+          <input type="password" id="apiKeyInput" class="input-field" placeholder="Gemini API キー" autocomplete="new-password" data-lpignore="true">
+          <button id="toggleApiKey" class="btn-icon">&#128065;</button>
+          <button id="clearApiKey" class="btn btn-secondary btn-sm" title="入力欄とこのブラウザの保存キーを完全に消去">消去</button>
+        </div>
+        <label style="display:block;margin-top:8px;font-size:13px;"><input type="checkbox" id="saveApiKey"> このブラウザに保存</label>
+        <div class="model-options" id="modelOptions">
+          <label class="model-option"><input type="radio" name="geminiModel" value="gemini-2.5-flash" checked><div class="model-card"><span class="model-name">2.5 Flash</span></div></label>
+          <label class="model-option"><input type="radio" name="geminiModel" value="gemini-2.5-pro"><div class="model-card"><span class="model-name">2.5 Pro</span></div></label>
+          <label class="model-option"><input type="radio" name="geminiModel" value="gemini-2.0-flash"><div class="model-card"><span class="model-name">2.0 Flash</span></div></label>
+        </div>
+        <div style="margin-top:12px;">
+          <span style="font-size:13px;color:var(--muted);margin-right:10px;">事業区分:</span>
+          <span class="seg" id="bizSeg"><button data-bt="kiso" class="active">基礎充電</button><button data-bt="mokutekichi">目的地充電</button></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-header"><span class="step-number">2</span><h2>4図面のアップロード（ある分だけでOK）</h2></div>
+      <div class="card-body">
+        <div id="slots" class="tab-row"></div>
+      </div>
+    </section>
+
+    <section class="card"><div class="card-body center">
+      <button class="btn btn-primary btn-large" id="runBtn" disabled>&#128269; 案件まとめチェックを実行</button>
+      <p class="card-description" id="runNote" style="margin-top:10px;">APIキーと1枚以上の図面を設定してください</p>
+      <p class="card-description" style="font-size:12px;color:var(--muted);">※配線ルート図の2パス精査（Pass1読み取り→Pass2判定）は個別チェックのみで行われます。まとめチェックは全図面1パスの簡易判定です。数値・色分けの精密確認は個別チェックをご利用ください。</p>
+      <p class="card-description" style="font-size:.85em;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:8px 10px;">
+        ⚠ <strong>データの取り扱い</strong>: アップロードした図面PDFは、判定のため Google の Gemini API に送信されます。個人情報・取引先名等を含む図面の取り扱いは、ご所属組織の規程に従ってください。送信データがAIの学習に利用されるかどうかは、お使いのGoogleアカウント・プランの設定によって異なります（Google AI Studio の設定をご確認ください）。
+      </p>
+      <div class="cost-bar" id="costBar" style="display:none;"></div>
+    </div></section>
+
+    <section class="card" id="loadingSection" style="display:none;"><div class="card-body center">
+      <div class="loading-spinner"></div><p id="loadingText">解析中...</p>
+      <!-- 波④: 実行キャンセル（AbortController）。中断しても実行済み分のAPI料金は発生する -->
+      <button class="btn btn-secondary" id="cancelBtn" style="margin-top:10px;">&#10005; キャンセル</button>
+      <p class="card-description" style="font-size:11px;color:var(--muted);margin-top:6px;">※キャンセルしても、実行済み分のAPI料金は発生します</p>
+    </div></section>
+
+    <section id="errorSection"></section>
+
+    <section class="card" id="resultSection" style="display:none;">
+      <div class="card-header"><h2>案件まとめ結果</h2></div>
+      <div class="card-body">
+        <div id="crossSection" style="margin-bottom:18px;"></div>
+        <h3 style="font-size:15px;">図面別サマリ</h3>
+        <div id="perDrawing"></div>
+        <div class="cost-bar" id="costBarResult" style="display:none;"></div>
+        <div class="result-actions"><button class="btn btn-primary" id="recheckBtn">&#128260; もう一度</button></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer"><p>NeV 図面チェックツール（統合版） &copy; 2026 ／ 案件まとめモード</p></footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+  <script src="core/util.js?v=20260710e"></script>
+  <script src="core/pdf.js?v=20260710e"></script>
+  <script src="core/gemini.js?v=20260710e"></script>
+  <script src="core/cost.js?v=20260710e"></script>
+  <script src="core/aggregate.js?v=20260710e"></script>
+  <script src="core/deterministic.js?v=20260710e"></script>
+  <script src="core/reconcile.js?v=20260710e"></script>
+  <script src="core/vote.js?v=20260710e"></script>
+  <script src="core/verdict.js?v=20260710e"></script>
+  <script src="core/rules-registry.js?v=20260710e"></script>
+  <script src="core/prompt.js?v=20260710e"></script>
+  <script src="core/crosscheck.js?v=20260710e"></script>
+  <script src="rules/mitori.js?v=20260710e"></script>
+  <script src="rules/heimen.js?v=20260710e"></script>
+  <script src="rules/haisen.js?v=20260710e"></script>
+  <script src="rules/keitou.js?v=20260710e"></script>
+  <script src="batch.js?v=20260710e"></script>
+</body>
+</html>

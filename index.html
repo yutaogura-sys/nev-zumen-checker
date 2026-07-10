@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeV 図面チェックツール（統合版）</title>
+  <link rel="stylesheet" href="css/style.css?v=20260710e">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <div>
+        <h1>NeV 図面チェックツール<span class="header-subtitle">統合版（R7補正）</span></h1>
+      </div>
+      <div class="header-badge"><a href="#" id="historyToggle" style="color:#fff;text-decoration:underline;">&#128337; 履歴</a></div>
+      <div class="header-badge"><a href="batch.html" style="color:#fff;text-decoration:underline;">案件まとめチェックへ</a></div>
+    </div>
+  </header>
+  <div class="disclaimer"><div class="disclaimer-inner">本ツールはAIによる一次チェック補助です。最終判断は必ず人間が目視で行ってください。</div></div>
+
+  <main class="main">
+    <!-- 波④: 判定履歴（直近10件・localStorage）。ヘッダの「履歴」でトグル表示 -->
+    <section class="card" id="historySection" style="display:none;">
+      <div class="card-header"><h2>&#128337; 判定履歴（直近10件）</h2><button class="btn btn-secondary btn-sm" id="historyClear" style="margin-left:auto;">履歴を消去</button></div>
+      <div class="card-body">
+        <p class="card-description">クリックすると当時の判定結果を<strong>読み取り専用</strong>で再表示します（このブラウザ内にのみ保存。<strong>人手調整（上書き）の状態は保存対象外</strong>です）。</p>
+        <div id="historyList"></div>
+      </div>
+    </section>
+
+    <!-- 1: APIキー -->
+    <section class="card" id="apiKeySection">
+      <div class="card-header"><span class="step-number">1</span><h2>Gemini API キーの設定</h2></div>
+      <div class="card-body">
+        <p class="card-description">図面の読み取りに Google の AI「Gemini」を使います。<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> でキーを取得して貼り付けてください。</p>
+        <p class="card-description" style="font-size:.85em;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:8px 10px;">
+          ⚠ <strong>データの取り扱い</strong>: アップロードした図面PDFは、判定のため Google の Gemini API に送信されます。個人情報・取引先名等を含む図面の取り扱いは、ご所属組織の規程に従ってください。送信データがAIの学習に利用されるかどうかは、お使いのGoogleアカウント・プランの設定によって異なります（Google AI Studio の設定をご確認ください）。APIキーは「このブラウザに保存する」を選んだ場合のみ、このPCのブラウザ内（localStorage）に平文で保存されます。共用PCでは保存しないでください。
+        </p>
+        <div class="input-group">
+          <!-- autocomplete="new-password": ブラウザのパスワードマネージャによる勝手な保存・自動入力を抑止 -->
+          <input type="password" id="apiKeyInput" class="input-field" placeholder="Gemini API キーを入力" autocomplete="new-password" data-lpignore="true">
+          <button id="toggleApiKey" class="btn-icon" title="表示切替">&#128065;</button>
+          <button id="verifyApiKey" class="btn btn-secondary btn-sm">接続テスト</button>
+          <button id="clearApiKey" class="btn btn-secondary btn-sm" title="入力欄とこのブラウザの保存キーを完全に消去">消去</button>
+        </div>
+        <span id="apiKeyStatus" class="status-badge"></span>
+        <div class="model-options" id="modelOptions">
+          <label class="model-option"><input type="radio" name="geminiModel" value="gemini-2.5-flash" checked>
+            <div class="model-card"><span class="model-name">Gemini 2.5 Flash<span class="tag tag-free">無料枠あり</span></span><span class="model-desc">高速・高精度（推奨）</span></div></label>
+          <label class="model-option"><input type="radio" name="geminiModel" value="gemini-2.5-pro">
+            <div class="model-card"><span class="model-name">Gemini 2.5 Pro<span class="tag tag-paid">有料</span></span><span class="model-desc">最高精度・複雑な図面向け</span></div></label>
+          <label class="model-option"><input type="radio" name="geminiModel" value="gemini-2.0-flash">
+            <div class="model-card"><span class="model-name">Gemini 2.0 Flash<span class="tag tag-free">無料枠あり</span></span><span class="model-desc">軽量・高速</span></div></label>
+        </div>
+        <label style="display:block;margin-top:10px;font-size:13px;"><input type="checkbox" id="saveApiKey"> このブラウザに保存する</label>
+      </div>
+    </section>
+
+    <!-- 2: 図面種別 -->
+    <section class="card">
+      <div class="card-header"><span class="step-number">2</span><h2>図面種別の選択</h2></div>
+      <div class="card-body">
+        <div class="tab-row" id="drawingTabs"></div>
+        <div style="margin-top:14px;">
+          <span style="font-size:13px;color:var(--muted);margin-right:10px;">事業区分:</span>
+          <span class="seg" id="bizSeg">
+            <button data-bt="kiso" class="active">基礎充電</button>
+            <button data-bt="mokutekichi">目的地充電</button>
+          </span>
+        </div>
+        <div style="margin-top:12px;">
+          <span style="font-size:13px;color:var(--muted);margin-right:10px;">精度モード:</span>
+          <span class="seg" id="precSeg">
+            <button data-pr="normal" class="active">通常（1回）</button>
+            <button data-pr="high">高精度（3回多数決）</button>
+            <button data-pr="crossmodel">2モデル一致（Flash+Pro）</button>
+          </span>
+          <span style="font-size:12px;color:var(--muted);margin-left:8px;">※高精度=判定ブレ抑制(料金約3倍)／2モデル一致=Flash・Proが両方合格の項目だけ合格・不一致は要確認(最も保守的)</span>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;">※配線ルート図は、精度モードとは別に常に<strong>2パス実行</strong>（Pass1: 旗上げ・統括表・色の読み取り → Pass2: 判定）となるため、<strong>API料金が約2倍</strong>かかります（数値・色分け判定の精度確保のため）。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3: アップロード -->
+    <section class="card">
+      <div class="card-header"><span class="step-number">3</span><h2>図面ファイルのアップロード</h2></div>
+      <div class="card-body">
+        <div class="upload-area" id="uploadArea">
+          <div style="font-size:32px;">&#128196;</div>
+          <p>PDF ファイルをドラッグ＆ドロップ または</p>
+          <label class="btn btn-primary btn-sm">ファイルを選択<input type="file" id="fileInput" accept=".pdf" hidden></label>
+          <p class="upload-note">対応形式: PDF（最大約13MB）</p>
+        </div>
+        <div class="file-info" id="fileInfo" style="display:none;margin-top:12px;">
+          <div class="file-info-inner">
+            <span>&#128196;</span>
+            <div><span class="file-name" id="fileName"></span><span class="file-size" id="fileSize"></span></div>
+            <button class="btn-icon" id="removeFile" title="削除" style="margin-left:auto;">&#10005;</button>
+          </div>
+          <div class="preview-container" id="previewContainer"></div>
+          <!-- D: 多ページPDFのページ選択（総ページ数が図面種別の上限を超えるときのみ app.js が表示） -->
+          <div class="page-select" id="pageSelect" style="display:none;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4: 実行 -->
+    <section class="card"><div class="card-body center">
+      <button class="btn btn-primary btn-large" id="checkBtn" disabled>&#128269; 要件チェックを実行</button>
+      <p class="card-description" id="checkNote" style="margin-top:10px;">APIキー・図面種別・ファイルを設定してください</p>
+      <div class="cost-bar" id="costBar" style="display:none;"></div>
+    </div></section>
+
+    <!-- ローディング -->
+    <section class="card" id="loadingSection" style="display:none;"><div class="card-body center">
+      <div class="loading-spinner"></div>
+      <p id="loadingText">図面を解析中...（30秒〜2分程度）</p>
+      <!-- 波④: 実行キャンセル（AbortController）。中断しても実行済み分のAPI料金は発生する -->
+      <button class="btn btn-secondary" id="cancelBtn" style="margin-top:10px;">&#10005; キャンセル</button>
+      <p class="card-description" style="font-size:11px;color:var(--muted);margin-top:6px;">※キャンセルしても、実行済み分のAPI料金は発生します</p>
+    </div></section>
+
+    <!-- エラー -->
+    <section id="errorSection"></section>
+
+    <!-- 結果 -->
+    <section class="card" id="resultSection" style="display:none;">
+      <div class="card-header"><h2>判定結果</h2><span id="resultTypeLabel" style="margin-left:auto;font-size:13px;color:var(--muted);"></span></div>
+      <div class="card-body">
+        <div class="review-note">⚠ これはAIによる一次判定です。<strong>最終判断は各項目を目視で確認</strong>してください。各項目の判定は下のプルダウンで修正できます（人手確認・上書き）。</div>
+        <div id="reviewSummary"></div>
+        <div class="result-tabs" id="resultTabs"></div>
+        <!-- 3-B: グループ枠は app.js が動的生成（2枠決め打ち→N枠対応。3グループ目の握り潰し防止） -->
+        <div id="tabContents"></div>
+        <div style="margin-top:16px;">
+          <h3 style="font-size:14px;">&#128270; 読み取り情報</h3>
+          <div class="detected-info" id="detectedInfo"></div>
+        </div>
+        <div style="margin-top:16px;">
+          <h3 style="font-size:14px;">&#129302; AI 総合コメント</h3>
+          <div class="ai-comment" id="aiComment"></div>
+        </div>
+        <div class="cost-bar" id="costBarResult" style="display:none;"></div>
+        <div class="result-actions">
+          <button class="btn btn-secondary" id="copyBtn">&#128203; 結果をコピー</button>
+          <button class="btn btn-secondary" id="excelBtn">&#128202; Excelダウンロード</button>
+          <button class="btn btn-primary" id="recheckBtn">&#128260; 別の図面をチェック</button>
+        </div>
+        <p class="card-description" id="excelNote" style="display:none;font-size:12px;color:#92400e;">※Excel出力ライブラリ（CDN）の読み込みに失敗したため、Excelダウンロードは利用できません。ネットワーク接続を確認してページを再読み込みしてください。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>NeV 図面チェックツール（統合版） &copy; 2026 ／ 対象: R7補正</p>
+    <p>本ツールはAI判定のため、最終確認は目視でお願いします。</p>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+  <!-- 波④: Excelエクスポート用 SheetJS（旧・配線ルート図ツールと同じCDN）。読込失敗時は app.js がボタンを無効化 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- core -->
+  <script src="core/util.js?v=20260710e"></script>
+  <script src="core/pdf.js?v=20260710e"></script>
+  <script src="core/gemini.js?v=20260710e"></script>
+  <script src="core/cost.js?v=20260710e"></script>
+  <script src="core/aggregate.js?v=20260710e"></script>
+  <script src="core/deterministic.js?v=20260710e"></script>
+  <script src="core/reconcile.js?v=20260710e"></script>
+  <script src="core/vote.js?v=20260710e"></script>
+  <script src="core/colorsanity.js?v=20260710e"></script>
+  <script src="core/verdict.js?v=20260710e"></script>
+  <script src="core/rules-registry.js?v=20260710e"></script>
+  <script src="core/prompt.js?v=20260710e"></script>
+  <!-- rules -->
+  <script src="rules/mitori.js?v=20260710e"></script>
+  <script src="rules/heimen.js?v=20260710e"></script>
+  <script src="rules/haisen.js?v=20260710e"></script>
+  <script src="rules/keitou.js?v=20260710e"></script>
+  <!-- app -->
+  <script src="app.js?v=20260710e"></script>
+</body>
+</html>
