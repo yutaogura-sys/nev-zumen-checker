@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NeV 図面チェック（案件まとめ）</title>
-  <link rel="stylesheet" href="css/style.css?v=20260710e">
+  <link rel="stylesheet" href="css/style.css?v=20260710f">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -79,24 +79,28 @@
 
   <footer class="footer"><p>NeV 図面チェックツール（統合版） &copy; 2026 ／ 案件まとめモード</p></footer>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
-  <script src="core/util.js?v=20260710e"></script>
-  <script src="core/pdf.js?v=20260710e"></script>
-  <script src="core/gemini.js?v=20260710e"></script>
-  <script src="core/cost.js?v=20260710e"></script>
-  <script src="core/aggregate.js?v=20260710e"></script>
-  <script src="core/deterministic.js?v=20260710e"></script>
-  <script src="core/reconcile.js?v=20260710e"></script>
-  <script src="core/vote.js?v=20260710e"></script>
-  <script src="core/verdict.js?v=20260710e"></script>
-  <script src="core/rules-registry.js?v=20260710e"></script>
-  <script src="core/prompt.js?v=20260710e"></script>
-  <script src="core/crosscheck.js?v=20260710e"></script>
-  <script src="rules/mitori.js?v=20260710e"></script>
-  <script src="rules/heimen.js?v=20260710e"></script>
-  <script src="rules/haisen.js?v=20260710e"></script>
-  <script src="rules/keitou.js?v=20260710e"></script>
-  <script src="batch.js?v=20260710e"></script>
+  <!-- pdf.js 4系（CVE-2024-4367の恒久対応・index.htmlと同一方式） -->
+  <script type="module">
+    import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+    window.pdfjsLib = pdfjsLib;
+  </script>
+  <script src="core/util.js?v=20260710f"></script>
+  <script src="core/pdf.js?v=20260710f"></script>
+  <script src="core/gemini.js?v=20260710f"></script>
+  <script src="core/cost.js?v=20260710f"></script>
+  <script src="core/aggregate.js?v=20260710f"></script>
+  <script src="core/deterministic.js?v=20260710f"></script>
+  <script src="core/reconcile.js?v=20260710f"></script>
+  <script src="core/vote.js?v=20260710f"></script>
+  <script src="core/verdict.js?v=20260710f"></script>
+  <script src="core/rules-registry.js?v=20260710f"></script>
+  <script src="core/prompt.js?v=20260710f"></script>
+  <script src="core/crosscheck.js?v=20260710f"></script>
+  <script src="rules/mitori.js?v=20260710f"></script>
+  <script src="rules/heimen.js?v=20260710f"></script>
+  <script src="rules/haisen.js?v=20260710f"></script>
+  <script src="rules/keitou.js?v=20260710f"></script>
+  <script src="batch.js?v=20260710f"></script>
 </body>
 </html>
