@@ -100,5 +100,16 @@ eq('currentMonthKey 1桁月の0埋め', cost.currentMonthKey(() => new Date(2026
   global.localStorage = saved;
 }
 
+// 7) NaN防御（Suite K対応）: 非数値usageでもNaNを作らず、累計を汚染しない（上限警告の信頼性）
+{
+  const est = cost.estimateCost({ promptTokenCount: 'abc', candidatesTokenCount: null, thoughtsTokenCount: {}, totalTokenCount: undefined }, 'gemini-2.5-flash');
+  ok(Number.isFinite(est.totalCostJpy), 'NaN防御: 非数値トークンでも totalCostJpy は有限値');
+  let v = 50;
+  const t = new cost.CapTracker({ capJpy: 100, store: { get: () => v, set: x => { v = x; } } });
+  t.addCost({ totalCostJpy: NaN });
+  eq('NaN防御: totalCostJpy=NaN は累計に加算されない', t.getTotalJpy(), 50);
+  ok(t.getState().status === 'warn' || t.getState().status === 'ok', 'NaN防御: 状態判定が壊れない');
+}
+
 console.log(fail === 0 ? '\n✅ cost_monthly 全テスト合格' : `\n❌ cost_monthly ${fail}件 失敗`);
 process.exit(fail === 0 ? 0 : 1);

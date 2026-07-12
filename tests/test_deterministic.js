@@ -83,7 +83,20 @@ eq('2-B 大小文字/空白ゆれ吸収も注記のみ', ccm([[' cvt8sq-3c ', 'p
 eq('仕様表に無いケーブルのみ → 検算対象外(none)', ccm([['UNKNOWN-CABLE', 'XYZ']]), 'none');
 eq('空配列 → 上書きしない(none)', ccm([]), 'none');
 eq('2-B オブジェクト形式 {cable,conduit} 適合も注記のみ', ccm([{ cable: 'CVT100sq', conduit: 'PFD-54' }]), 'none');
+// F-2: 数字1文字差の補正は適合扱いにしない（誤読か実在別サイズか判別不能→要目視warn）
+eq('F-2 数字差 [CVT22sq,PFD-22]（実在別サイズの可能性）→ warn', ccm([['CVT22sq', 'PFD-22']]), 'warn');
 eq('オブジェクト形式の不適合 → warn', ccm([{ cable: 'CVT100sq', conduit: 'PFD-28' }]), 'warn');
+// 曖昧補正（1文字差の候補が複数）は先勝ちで確定しない（Suite G対応）
+{ // ケーブル側: CVT32sq は CVT22sq/CVT38sq の両方に1文字差 → 補正せず照合対象外（誤った「適合」注記を出さない）
+  const o = det.run(haisen, { cable_conduit_pairs: [['CVT32sq', 'PFD-28']] }, {});
+  ok(!/表記補正: CVT32SQ→/.test((o.mc_cable_conduit_match || {}).detail || ''), '曖昧補正G: 候補複数のケーブルは無警告の先勝ち補正をしない');
+}
+{ // 配管側: 複数の適合候補と1文字差 → 適合扱いにせず判別不能のwarn
+  const synth = { deterministic: [{ fn: 'cable_conduit_match', targets: ['mc_cable_conduit_match'], requires: { cable_conduit_pairs: '' } }], meta: { spec: { cableConduitMatch: { 'CBL': ['PFD-28', 'PFD-22'] } } } };
+  const o = det.run(synth, { cable_conduit_pairs: [['CBL', 'PFD-24']] }, {});
+  eq('曖昧補正G: 配管が複数候補と1文字差 → warn', (o.mc_cable_conduit_match || {}).status, 'warn');
+  ok(/判別不能/.test((o.mc_cable_conduit_match || {}).detail || ''), '曖昧補正G: 判別不能の注記つき');
+}
 
 // ── branch_le_main（電気系統: 分岐AT≤主幹AT）──
 const keitou2 = reg.getRule('keitou');

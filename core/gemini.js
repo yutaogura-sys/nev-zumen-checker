@@ -20,6 +20,15 @@
   };
 
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+  // F-8: リトライ待機中もキャンセルに即応答する sleep（quota待ち最大121秒中の無反応を解消）
+  function sleepAbortable(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal && signal.aborted) { reject(abortedError()); return; }
+      const t = setTimeout(() => { if (signal) signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+      function onAbort() { clearTimeout(t); reject(abortedError()); }
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
 
   // ─── モデル別接続テスト ────────────────────────────────
   async function verifyModel(apiKey, modelId) {
@@ -102,7 +111,7 @@
   // 波④-3: 実行キャンセル（AbortController）用のエラー生成。
   // 旧・電気系統図ツールのキャンセル機能の復元。type='aborted' はリトライ対象にしない。
   function abortedError() {
-    const err = new Error('キャンセルしました（実行済み分は課金されています）');
+    const err = new Error('キャンセルしました（実行済み・送信済みの呼び出し分は課金されます。未送信分の課金はありません）');
     err.type = 'aborted';
     return err;
   }
@@ -304,7 +313,7 @@
           const waitMs = 2000 * Math.pow(2, transientCount - 1);
           const waitSec = Math.round(waitMs / 1000);
           if (onProgress && passContext) onProgress({ ...passContext, message: `サーバー応答待機中... ${waitSec}秒後に再試行 (${transientCount}/${MAX_TRANSIENT})`, retry: true, retryReason: 'server_overload' });
-          await sleep(waitMs);
+          await sleepAbortable(waitMs, opts && opts.signal);
           continue;
         }
         // FZ-4: 待機は120秒まで（日次クォータの数時間待ちで無言ハングしない。超える場合は即エラー返却）
@@ -313,7 +322,7 @@
           const waitMs = (err.retryAfterSec + 1) * 1000;
           const waitSec = Math.ceil(waitMs / 1000);
           if (onProgress && passContext) onProgress({ ...passContext, message: `レート制限のため ${waitSec}秒後に再試行中... (${quotaCount}/${MAX_QUOTA})`, retry: true, retryReason: 'quota_exceeded' });
-          await sleep(waitMs);
+          await sleepAbortable(waitMs, opts && opts.signal);
           continue;
         }
         if (err.message && err.message.indexOf('ネットワーク接続エラー') === 0 && networkCount < MAX_NETWORK) {
@@ -321,7 +330,7 @@
           const waitMs = 2000 * networkCount;
           const waitSec = Math.round(waitMs / 1000);
           if (onProgress && passContext) onProgress({ ...passContext, message: `ネットワークエラー、${waitSec}秒後に再試行 (${networkCount}/${MAX_NETWORK})`, retry: true, retryReason: 'network' });
-          await sleep(waitMs);
+          await sleepAbortable(waitMs, opts && opts.signal);
           continue;
         }
         throw err;

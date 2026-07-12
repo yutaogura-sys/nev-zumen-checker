@@ -64,6 +64,7 @@
         if (!Array.isArray(arr)) return;
         arr.forEach(r => {
           if (!r || CONTRADICTION_IDS.indexOf(r.id) < 0) return;
+          if (r._deterministic) return; // コード検算で確定した行には介入しない（将来ガード）
           if (normSt(r.status) !== 'fail') return;
           r.original_status = r.status;
           r.status = 'warn';
@@ -86,6 +87,7 @@
       if (!Array.isArray(arr)) return;
       arr.forEach(r => {
         if (!r || COLOR_DEPENDENT_IDS.indexOf(r.id) < 0) return;
+        if (r._deterministic) return; // コード検算で確定した行には介入しない（将来ガード）
         if (normSt(r.status) !== 'fail') return; // fail のみ降格（pass/warn/na は不変）
         r.original_status = r.status; // 監査用に元判定を保持
         r.status = 'warn';

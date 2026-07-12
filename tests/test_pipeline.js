@@ -185,6 +185,40 @@ const CK = (id, extra) => Object.assign({ id, category: 'c', label: id, required
   eq('B-2: status変更を伴うtrustLoosen上書きは従来どおりpass確定', r.agg.items[0].status, 'pass');
 }
 
+// ══ Suite P: status/confidence「__proto__」等がObject.prototype経由で安全網を素通りしない ══
+{
+  const r = agg.aggregateResults([{ id: 'a', status: '__proto__', found_text: 'x', confidence: 'high' }], [CK('a')]);
+  eq('P: status「__proto__」→ warn矯正（false-PASS防止）', r.items[0].status, 'warn');
+  const r2 = agg.aggregateResults([{ id: 'a', status: 'constructor', found_text: 'x', confidence: 'high' }], [CK('a')]);
+  eq('P: status「constructor」→ warn矯正', r2.items[0].status, 'warn');
+}
+{
+  const merged2 = det.apply([{ id: 'k', status: '__proto__', found_text: 'x' }], { k: { fn: 'wire_reconcile', status: 'pass', detail: 'd' } });
+  ok(merged2[0].status !== 'pass' && !merged2[0]._deterministic, 'P: status「__proto__」でも非trustLoosenのpass緩め・スタンプ付与を遮断');
+}
+{
+  const runs = [
+    { results: [{ id: 'a', status: 'pass', confidence: '__proto__', found_text: 'x' }] },
+    { results: [{ id: 'a', status: 'pass', confidence: 'low', found_text: 'x' }] },
+  ];
+  const m = vote.mergeRuns(runs);
+  eq('P: confidence「__proto__」混入でもlowが最悪値として伝播', m.results[0].confidence, 'low');
+}
+
+// ══ F-4/F-1: trustLoosenの同statusエコーは権威スタンプ（非trustLoosenのB-2は維持）══
+{
+  const rule = { deterministic: [{ fn: 'space_width_2500', targets: ['w'], requires: { charging_space_widths_mm: '' } }] };
+  const runs = [{ results: [{ id: 'w', status: 'pass', found_text: '' }], detected_info: { charging_space_widths_mm: [2500, 2600], charging_count: 2 } }];
+  const r = pipeline(runs, rule, [CK('w')]);
+  eq('F-4: 幅を実測検証したpassエコーはスタンプされ根拠ゲート免除', r.agg.items[0].status, 'pass');
+}
+{
+  const rule = { deterministic: [{ fn: 'demand_rated_count', targets: ['demand'], requires: { main_breaker_at: '', charger_count: '', simultaneous_count: '' } }] };
+  const runs = [{ results: [{ id: 'demand', status: 'na', found_text: '' }], detected_info: { main_breaker_at: 150, charger_count: 3 } }];
+  const r = pipeline(runs, rule, [CK('demand')]);
+  eq('F-1: デマンド不要をコード確認したnaエコーはS2ゲートで維持', r.agg.items[0].status, 'na');
+}
+
 // ══ 2-B: cable_conduit_match は一致でも pass を確定しない（spec未検証のため）══
 {
   const rule = { meta: { spec: { cableConduitMatch: { 'CVT8SQ-3C': ['PFD-28'] } } }, deterministic: [{ fn: 'cable_conduit_match', targets: ['cc'], requires: { cable_conduit_pairs: '' } }] };

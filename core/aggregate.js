@@ -24,7 +24,7 @@
     const resultMap = {};
     (Array.isArray(rawResults) ? rawResults : []).forEach(r => { if (r && r.id != null) resultMap[r.id] = r; });
 
-    const KNOWN = { pass: 'pass', fail: 'fail', warn: 'warn', na: 'na' };
+    const KNOWN = Object.assign(Object.create(null), { pass: 'pass', fail: 'fail', warn: 'warn', na: 'na' }); // 「__proto__」等のstatus文字列がObject.prototype経由で正規化を素通りしない
     // 確信度low → pass/fail を warn（要確認）へ降格（既定on）。断定的な誤読を人間確認に回す。
     const abstainLowConfidence = opts.abstainLowConfidence !== false;
     // 根拠(found_text)の無い「合格」を warn へ降格（既定on）。品質最優先：幻覚・無根拠のpassを禁止。
@@ -39,7 +39,7 @@
       // 確信度low: 断定(pass/fail)を warn に落とす（na・warnはそのまま）。
       // ※決定論チェック(_deterministic)が確定させた結果は、コード検算が根拠でありAIの確信度とは無関係なので降格しない。
       // 表記ゆれ正規化: 日本語（低/中/高）や medium 等をスキーマ値(low/mid/high)に吸収（低→low を逃すと降格が不発）。
-      const CONF_MAP = { low: 'low', '低': 'low', '低い': 'low', mid: 'mid', medium: 'mid', '中': 'mid', high: 'high', '高': 'high', '高い': 'high' };
+      const CONF_MAP = Object.assign(Object.create(null), { low: 'low', '低': 'low', '低い': 'low', mid: 'mid', medium: 'mid', '中': 'mid', high: 'high', '高': 'high', '高い': 'high' });
       const confRaw = String(result.confidence == null ? '' : result.confidence).trim().toLowerCase();
       const conf = CONF_MAP[confRaw] || confRaw;
       if (abstainLowConfidence && conf === 'low' && (status === 'pass' || status === 'fail') && !result._deterministic) {

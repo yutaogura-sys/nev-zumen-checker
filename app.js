@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   function selectDrawing(type) {
+    if (running) { alert('チェック実行中は図面種別を変更できません。キャンセルするか完了を待ってください。'); return; }
     state.drawingType = type;
     document.querySelectorAll('#drawingTabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
     buildPageSelect(); // D: 図面種別で maxPages が変わる（5/6）ため選択UIを再評価
@@ -54,11 +55,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 事業区分セグメント ──
   $('bizSeg').addEventListener('click', e => {
+    if (running) { alert('チェック実行中は事業区分を変更できません。キャンセルするか完了を待ってください。'); return; }
     const btn = e.target.closest('button'); if (!btn) return;
     state.businessType = btn.dataset.bt;
     document.querySelectorAll('#bizSeg button').forEach(b => b.classList.toggle('active', b === btn));
   });
   $('precSeg').addEventListener('click', e => {
+    if (running) { alert('チェック実行中は精度モードを変更できません。キャンセルするか完了を待ってください。'); return; }
     const btn = e.target.closest('button'); if (!btn) return;
     state.precision = btn.dataset.pr;
     document.querySelectorAll('#precSeg button').forEach(b => b.classList.toggle('active', b === btn));
@@ -73,6 +76,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (state.apiKey) localStorage.setItem('nev_api_key', state.apiKey);
       else localStorage.removeItem('nev_api_key');
     }
+    // F-3: キーが変わったら旧キーのモデル利用可否は無効（別キーの結果で「利用可能」と誤表示しない）
+    modelAvailability = null; renderModelAvailability();
+    const badge = $('apiKeyStatus'); if (badge.textContent) { badge.textContent = ''; badge.className = 'status-badge'; }
     updateCheckButton();
   });
   $('toggleApiKey').addEventListener('click', () => {
@@ -97,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     state.apiKey = '';
     localStorage.removeItem('nev_api_key');
     $('saveApiKey').checked = false;
+    modelAvailability = null; renderModelAvailability(); // F-3: 旧キーの利用可否表示も消去
     $('apiKeyStatus').textContent = 'このブラウザの保存キーを消去しました';
     $('apiKeyStatus').className = 'status-badge';
     updateCheckButton();
@@ -144,6 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ['dragleave', 'drop'].forEach(ev => uploadArea.addEventListener(ev, e => { e.preventDefault(); uploadArea.classList.remove('drag'); }));
   uploadArea.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
   $('removeFile').addEventListener('click', () => {
+    if (running) { alert('チェック実行中はファイルを削除できません。キャンセルするか完了を待ってください。'); return; }
     state.file = null;
     state.pageCount = 0; state.pageThumbs = null; state.selectedPages = null;
     buildPageSelect();
@@ -152,8 +160,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   async function handleFile(file) {
+    if (running) { alert('チェック実行中はファイルを変更できません。キャンセルするか完了を待ってください。'); return; }
     if (!file.name.toLowerCase().endsWith('.pdf')) { alert('PDFファイルを選択してください'); return; }
     state.file = file;
+    // 旧ファイルのページ選択が過渡的に残らないよう先にクリア（プレビュー生成のawait中の乖離防止）
+    state.pageCount = 0; state.pageThumbs = null; state.selectedPages = null;
+    buildPageSelect();
     $('fileName').textContent = file.name;
     $('fileSize').textContent = NevUtil.formatFileSize(file.size);
     $('fileInfo').style.display = 'block';
@@ -240,13 +252,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const cnt = $('pageSelectCount');
     if (cnt) cnt.textContent = pages.length
       ? ` ／ 選択中: ${pages.map(p => 'P' + p).join(', ')}`
-      : ' ／ 未選択（実行時は先頭ページを使用します）';
+      : ' ／ 未選択（未選択の場合、画像化時は先頭ページ群・PDF直接送信時は全ページが対象になります）';
   }
 
   function updateCheckButton() {
     const ready = state.apiKey && state.drawingType && state.file;
-    $('checkBtn').disabled = !ready;
-    $('checkNote').textContent = ready ? '準備完了。実行できます。' : 'APIキー・図面種別・ファイルを設定してください';
+    $('checkBtn').disabled = !ready || running; // 実行中はファイル差し替え等で再有効化しない
+    $('checkNote').textContent = running ? '実行中…' : (ready ? '準備完了。実行できます。' : 'APIキー・図面種別・ファイルを設定してください');
     renderCostBar($('costBar'));
   }
 
@@ -288,6 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 波④-3: 実行キャンセル（AbortController）。旧・電気系統図ツールのキャンセル機能の復元。
   // abort() で実行中の fetch を中断。既に取得済みの runs は捨てず結果表示する（runCheck側で処理）。
   let abortCtrl = null;
+  let running = false; // 実行中の再入・二重実行防止（実行中のファイル差し替えでcheckBtnが再有効化されるのを防ぐ）
   $('cancelBtn').addEventListener('click', () => {
     if (!abortCtrl) return;
     abortCtrl.abort();
@@ -296,11 +309,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   async function runCheck() {
+    if (running) return; // 二重実行防止（並走すると二重課金・キャンセル不能化・結果の相互上書きが起きる）
     // 上限超過時は実行前に確認
     const st = capTracker.getState();
     if (st.status === 'over') {
       if (!confirm(`料金上限を ${st.overageJpy.toLocaleString()} 円 オーバーしています。続行しますか？`)) return;
     }
+    running = true;
     $('errorSection').innerHTML = '';
     $('resultSection').style.display = 'none';
     $('loadingSection').style.display = 'block';
@@ -311,6 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let canceled = false;
 
     const rule = NevRules.getRule(state.drawingType);
+    const runFileName = state.file ? state.file.name : ''; // クリック時点の判定対象を固定（差し替え時の誤表示防止）
     try {
       // 入力生成: ネイティブPDF優先、サイズ超過時は画像化にフォールバック。
       // rule.settings.preferImages=true の図面（配線ルート図＝色分けが判定要素）は最初から画像化。
@@ -383,7 +399,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const modeNote = state.precision === 'crossmodel' ? `2モデル一致 ${models[i]}（${i + 1}/${models.length}）`
           : models.length > 1 ? `高精度 ${i + 1}/${models.length}回目` : '30秒〜2分程度';
-        $('loadingText').textContent = `${rule.meta.drawingName} を解析中...（${modeNote}）`;
+        const passNote = pass1Data ? '2パス 2/2: 判定・' : '';
+        $('loadingText').textContent = `${rule.meta.drawingName} を解析中...（${passNote}${modeNote}）`;
         try {
           const r = await NevGemini.callGeminiWithRetry(
             state.apiKey, input.images, promptText, models[i],
@@ -417,7 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (canceled && runs.length === 0) throw Object.assign(new Error('キャンセルしました（実行済み分は課金されています）'), { suggestions: [] });
       if (runs.length === 0) throw (runErrors[0] ? Object.assign(new Error(runErrors[0].message), { suggestions: [] }) : new Error('判定に失敗しました'));
       if (canceled) {
-        $('errorSection').innerHTML += `<div class="error-card" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;"><strong>⚠ キャンセルしました（実行済み分は課金されています）</strong><p>取得済みの ${runs.length} 回分で判定結果を表示します（${state.precision === 'crossmodel' ? '2モデル一致の保守性が低下' : '多数決の票数が減少'}）。目視確認を強く推奨します。</p></div>`;
+        $('errorSection').innerHTML += `<div class="error-card" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;"><strong>⚠ キャンセルしました（実行済み・送信済みの呼び出し分は課金されます。未送信分の課金はありません）</strong><p>取得済みの ${runs.length} 回分で判定結果を表示します（${state.precision === 'crossmodel' ? '2モデル一致の保守性が低下' : '多数決の票数が減少'}）。目視確認を強く推奨します。</p></div>`;
       }
       const result = NevVote.mergeRuns(runs);
       // 波③: 2パス時は Pass1 の抽出結果を detected_info に統合（Pass1 が抽出の単一情報源。
@@ -425,6 +442,10 @@ document.addEventListener('DOMContentLoaded', () => {
       // 決定論検算（wire_reconcile 等）・旗上げ一覧表示・色観測サニティはこの統合後の値を使う。
       if (twoPass && pass1Data) {
         result.detected_info = Object.assign({}, result.detected_info || {}, pass1Data);
+        // F-5: 2パスでは抽出の単一情報源はPass1。Pass2が指示違反でdetected_infoをechoして
+        // 多数決の「割れ」(_disputedFields)を生成しても、それはechoの揺れでありPass1の信頼性と無関係。
+        // 残すと決定論検算が「検算保留」に化け、Pass1由来の乖離warnを握り潰す（false-PASS方向）。
+        delete result.detected_info._disputedFields;
         result._twoPass = true;
         // 波③: 色観測サニティ（後処理）。Pass1 が「色観測不能/1色のみ」を報告した場合に限り、
         // 色依存項目の fail を warn に降格（モノクロ誤認による false-FAIL 防止・旧ツール準拠）。
@@ -437,6 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
           $('errorSection').innerHTML += `<div class="error-card" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;"><strong>⚠ 色観測サニティによる自動降格 ${sanity.count}件</strong><p>${why}があるため、色依存項目（${esc(sanity.downgrades.map(d => d.id).join(', '))}）の「不合格」を「要確認」に降格しました。お手元の図面の色分けを直接目視で確認してください。</p></div>`;
         }
       }
+      result._ts = new Date().toISOString(); // 判定時刻（エクスポート時刻と区別。監査証跡の正確性）
       result._precisionMode = state.precision;
       result._models = models;
       result._ranModels = runs.map(r => r._model);
@@ -447,12 +469,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // M1: 追記（+=）にして他の安全警告と共存させる（上書きで警告が消えるのを防ぐ）
         $('errorSection').innerHTML += `<div class="error-card" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;"><strong>⚠ 一部モデルが未実行</strong><p>${esc(runErrors.map(e => e.model + ': ' + e.message).join(' / '))}<br>成功した ${runs.length} 回分で判定しています（${state.precision === 'crossmodel' ? '2モデル一致の保守性が一部低下' : '多数決の票数が減少'}）。目視確認を強く推奨します。</p></div>`;
       }
+      result._fileName = runFileName; // 結果がどのファイルの判定かを刻印（履歴にも保存される）
       renderResult(rule, result, input, null);
       // 波④-2: 判定完了時に履歴へ保存（直近10件・override状態は保存対象外）
       pushHistory(rule, result);
     } catch (err) {
       showError(err);
     } finally {
+      running = false;
       abortCtrl = null; // 波④-3: 実行終了後の abort() を無効化
       $('loadingSection').style.display = 'none';
       $('checkBtn').disabled = false;
@@ -525,8 +549,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     $('aiComment').textContent = result.overall_comment || '（コメントなし）';
     const dis = (result._voteDisagreements || []).length;
-    const precLabel = result._voteRuns > 1 ? `高精度${result._voteRuns}回` : '通常1回';
-    $('resultTypeLabel').textContent = `${rule.meta.drawingName} / ${state.businessType === 'kiso' ? '基礎充電' : '目的地充電'} / ${precLabel}` + (dis ? ` / 判定ゆれ${dis}項目` : '');
+    const precLabel = precisionLabelFor(result);
+    $('resultTypeLabel').textContent = `${rule.meta.drawingName} / ${state.businessType === 'kiso' ? '基礎充電' : '目的地充電'} / ${precLabel}` + (dis ? ` / 判定ゆれ${dis}項目` : '') + (result._fileName ? ` ／ ファイル: ${result._fileName}` : '');
 
     // ページ切り捨て警告（画像化フォールバックで一部ページが未読の場合）
     if (input && input.truncated) {
@@ -597,7 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ${item.detail ? `<div class="c-detail">${esc(item.detail)}</div>` : ''}
         <div class="c-override">確認/修正:
           <select class="ov-select" data-k="${idx}:${item.id}">
-            <option value=""${overridden ? '' : ' selected'}>AIのまま（${STLABEL[item.status] || item.status}）</option>
+            <option value=""${overridden ? '' : ' selected'}>${item.original_status ? `自動降格のまま（AI判定${STLABEL[item.original_status] || item.original_status}→${STLABEL[item.status] || item.status}）` : `AIのまま（${STLABEL[item.status] || item.status}）`}</option>
             ${opts}
           </select></div>
       </div></div>`;
@@ -697,14 +721,30 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${i + 1}. ${cable}${conduit}${method}${len} ${note}`.trim();
   }
 
+  // 実行内容に忠実な精度表記（モード＋実際の実行数。キャンセル等の部分実行を隠さない＝監査証跡の正確性）
+  function precisionLabelFor(result) {
+    const mode = result && result._precisionMode;
+    const base = mode === 'crossmodel' ? '2モデル一致(Flash+Pro)' : mode === 'high' ? '高精度(3回多数決)'
+      : mode ? '通常(1回)' : (result && result._voteRuns > 1 ? `高精度${result._voteRuns}回` : '通常(1回)');
+    const planned = result && Array.isArray(result._models) ? result._models.length : null;
+    const ran = result && Array.isArray(result._ranModels) ? result._ranModels.length : ((result && result._voteRuns) || null);
+    return (planned && ran != null && ran < planned) ? `${base}・実行${ran}/${planned}回（部分結果）` : base;
+  }
+
   let lastRender = null;
   $('copyBtn').addEventListener('click', () => {
     if (!lastRender) return;
     const { rule, aggs, result } = lastRender;
     // L5: 監査に使える記録として、総合判定・件数・モード・日時・読み取り情報・AIコメントを含める
-    const precLabel = state.precision === 'crossmodel' ? '2モデル一致(Flash+Pro)' : state.precision === 'high' ? '高精度(3回多数決)' : '通常(1回)';
+    // S3-3: 判定日時は「判定した時刻」（result._ts）。エクスポート時刻を判定日時として書くと監査記録の虚偽になる。
+    const precLabel = precisionLabelFor(result);
+    const judgedIso = (result && result._ts) || lastRender.restoredTs || null;
+    const judgedStr = judgedIso ? new Date(judgedIso).toLocaleString('ja-JP') : new Date().toLocaleString('ja-JP');
     let txt = `=== NeV ${rule.meta.drawingName} 判定結果（${state.businessType === 'kiso' ? '基礎充電' : '目的地充電'}）===\n`;
-    txt += `判定日時: ${new Date().toLocaleString('ja-JP')} ／ 判定モード: ${precLabel}\n`;
+    txt += `判定日時: ${judgedStr} ／ 判定モード: ${precLabel}\n`;
+    if (lastRender.restoredTs) txt += `※履歴からの再表示を出力しています（エクスポート日時: ${new Date().toLocaleString('ja-JP')}）\n`;
+    const runErrsCp = (result && result._runErrors) || [];
+    if (runErrsCp.length) txt += `※部分結果: 一部が未実行（${runErrsCp.map(e => (e.model || '') + ': ' + (e.message || '')).join(' / ')}）。目視確認を強く推奨。\n`;
     txt += `※AI一次判定＋人手確認。最終判断は目視確認済み前提。\n\n`;
     const STJP = { pass: '合格', warn: '要確認', fail: '不合格', na: '非該当' };
     aggs.forEach(({ group: g, agg }, idx) => {
@@ -761,14 +801,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const STJP = { pass: '合格', warn: '要確認', fail: '不合格', na: '非該当' };
     const groupLabelX = { nev: 'NeV要件判定', manual: '作図センター基準（参考・NeV合否と別）' };
     const cats = rule.categories || {};
-    const precLabel = state.precision === 'crossmodel' ? '2モデル一致(Flash+Pro)' : state.precision === 'high' ? '高精度(3回多数決)' : '通常(1回)';
+    const precLabel = precisionLabelFor(result);
+    const judgedIso = (result && result._ts) || lastRender.restoredTs || null;
+    const judgedStr = judgedIso ? new Date(judgedIso).toLocaleString('ja-JP') : new Date().toLocaleString('ja-JP');
+    const runErrsXl = (result && result._runErrors) || [];
 
     // シート1: 判定結果（メタ情報＋総合＋項目明細。人手オーバーライド反映後の実効値で出力）
     const rows1 = [
       ['NeV 図面チェックツール（統合版） 判定結果'],
       ['図面種別', rule.meta.drawingName, '事業区分', state.businessType === 'kiso' ? '基礎充電' : '目的地充電'],
-      ['判定日時', new Date().toLocaleString('ja-JP'), '判定モード', precLabel],
+      ['判定日時', judgedStr, '判定モード', precLabel],
       ['注記', 'AIによる一次判定＋人手確認の記録です。最終判断は目視確認済みが前提です。'],
+      ...(lastRender.restoredTs ? [['注記', `履歴からの再表示を出力（エクスポート日時: ${new Date().toLocaleString('ja-JP')}）`]] : []),
+      ...(runErrsXl.length ? [['注記', `部分結果: 一部が未実行（${runErrsXl.map(e => (e.model || '') + ': ' + (e.message || '')).join(' / ')}）。目視確認を強く推奨。`]] : []),
       [],
       ['グループ', 'カテゴリ', '項目', '必須/任意', '判定（実効）', 'AI判定', '人手調整', '検出内容', '詳細'],
     ];
@@ -901,13 +946,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const ov = Object.keys(e.overall || {}).map(g => `${g === 'manual' ? '参考' : 'NeV'}: ${STJP[e.overall[g]] || e.overall[g]}`).join(' ／ ');
       const cnt = e.counts ? `（不合格${e.counts.fail}・要確認${e.counts.warn}・合格${e.counts.pass}）` : '';
       let ts = e.ts; try { ts = new Date(e.ts).toLocaleString('ja-JP'); } catch (er) { /* keep raw */ }
+      const partial = e.result && ((Array.isArray(e.result._runErrors) && e.result._runErrors.length) || (Array.isArray(e.result._models) && Array.isArray(e.result._ranModels) && e.result._ranModels.length < e.result._models.length)) ? '（部分結果）' : '';
       return `<button type="button" class="history-item" data-hid="${esc(e.id)}" style="display:block;width:100%;text-align:left;padding:8px 10px;margin-top:6px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);cursor:pointer;font-size:13px;">
-        <strong>${esc(e.drawingName || e.drawingType)}</strong> ／ ${e.businessType === 'kiso' ? '基礎充電' : '目的地充電'} ／ ${esc(PRECJP[e.precision] || e.precision || '')} ／ ${esc(ov)} ${esc(cnt)}<br>
+        <strong>${esc(e.drawingName || e.drawingType)}</strong> ／ ${e.businessType === 'kiso' ? '基礎充電' : '目的地充電'} ／ ${esc((PRECJP[e.precision] || e.precision || '') + partial)} ／ ${esc(ov)} ${esc(cnt)}<br>
         <span style="color:var(--muted);font-size:12px;">${esc(ts)}${e.fileName ? '　' + esc(e.fileName) : ''}</span>
       </button>`;
     }).join('');
   }
   function restoreHistory(entry) {
+    if (running) { alert('チェック実行中は履歴を復元できません。キャンセルするか完了を待ってください。'); return; }
     const rule = NevRules.getRule(entry.drawingType);
     if (!rule || !entry.result) { alert('この履歴は復元できません（データ不足）'); return; }
     // 当時の事業区分・精度モード・図面種別にUIを同期（判定式・表示ラベルの整合のため）
@@ -922,12 +969,20 @@ document.addEventListener('DOMContentLoaded', () => {
     selectDrawing(entry.drawingType);
     $('errorSection').innerHTML = '';
     renderResult(rule, entry.result, null, null);
+    if (lastRender) lastRender.restoredTs = entry.ts; // エクスポートに判定時刻・再表示注記を伝える（S3-3）
+    // S3-2: 当時の「部分結果」警告を再表示（保存済みの _runErrors を使う。出さないと完全な結果に見える＝誤安心）
+    const rErrsH = Array.isArray(entry.result._runErrors) ? entry.result._runErrors : [];
+    const plannedH = Array.isArray(entry.result._models) ? entry.result._models.length : null;
+    const ranH = Array.isArray(entry.result._ranModels) ? entry.result._ranModels.length : (entry.result._voteRuns || null);
+    if (rErrsH.length || (plannedH && ranH != null && ranH < plannedH)) {
+      $('errorSection').innerHTML += `<div class="error-card" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;"><strong>⚠ この判定は部分結果です${plannedH ? `（実行${ranH != null ? ranH : '?'}/${plannedH}回）` : ''}</strong><p>${esc(rErrsH.map(er => (er.model || '') + ': ' + (er.message || '')).join(' / ') || 'キャンセルまたはエラーにより一部が未実行のまま保存された判定です。')}<br>目視確認を強く推奨します。</p></div>`;
+    }
     // 読み取り専用化: 人手オーバーライドのセレクトを無効化＋履歴表示バナー
     document.querySelectorAll('#resultSection .ov-select').forEach(s => { s.disabled = true; });
     let ts = entry.ts; try { ts = new Date(entry.ts).toLocaleString('ja-JP'); } catch (er) { /* keep raw */ }
     $('resultTypeLabel').textContent += ' ／ 履歴表示（読み取り専用）';
     $('reviewSummary').insertAdjacentHTML('afterbegin',
-      `<div class="review-note" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;">&#128337; ${esc(ts)} の判定結果を履歴から再表示しています（読み取り専用）。当時の人手調整（上書き）は保存対象外のため反映されません。新しい判定を実行すると通常表示に戻ります。</div>`);
+      `<div class="review-note" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;">&#128337; ${esc(ts)} の判定結果を履歴から再表示しています（読み取り専用）。当時の人手調整（上書き）は保存対象外のため反映されません。設定（図面種別・事業区分・精度モード）も当時の値に切り替えているため、次回の実行前にご確認ください。新しい判定を実行すると通常表示に戻ります。</div>`);
   }
   $('historyToggle').addEventListener('click', e => {
     e.preventDefault();
@@ -950,5 +1005,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 起動 ──
   buildDrawingTabs();
+  // pdf.js（CDN）の読み込み失敗を明示する。放置すると「ファイルが破損している可能性」等の
+  // 無関係なエラー文言に化けて誤誘導になる（XLSX側の同等ガードとの対称化）。
+  if (typeof window.pdfjsLib === 'undefined' || !window.pdfjsLib) {
+    $('errorSection').innerHTML += '<div class="error-card"><strong>⚠ PDF処理ライブラリ（pdf.js）の読み込みに失敗しました</strong><p>ネットワーク接続（CDNへのアクセス）を確認して、ページを再読み込みしてください。このままではPDFを処理できません。</p></div>';
+  } else {
+    $('fileInput').disabled = false; // 初期化完了までは無効（低速回線でリスナー未登録のまま選択→黙って捨てられるのを防ぐ）
+  }
   updateCheckButton();
 });

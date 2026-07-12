@@ -24,7 +24,7 @@ const origFetch = global.fetch;
     ok(false, 'AbortError で throw する');
   } catch (e) {
     eq('AbortError: type', e.type, 'aborted');
-    ok(e.message.includes('キャンセルしました') && e.message.includes('実行済み分は課金されています'), 'AbortError: キャンセル文言（課金注記付き）');
+    ok(e.message.includes('キャンセルしました') && e.message.includes('課金されます'), 'AbortError: キャンセル文言（課金注記付き）');
   }
   eq('AbortError: fetch は1回だけ', calls, 1);
 

@@ -123,5 +123,16 @@ function mkResult(colors, statuses) {
   ok(res.manual_results[4].status === 'pass', 'passは昇格も降格もしない');
 }
 
+// 将来ガード: コード検算で確定（_deterministic）した fail には介入しない（Suite F(c)対応）
+{
+  const res = { detected_info: { wire_color_distinction: ['赤', '青'] }, manual_results: [
+    { id: 'mc_color_coding', status: 'fail', detail: 'x', _deterministic: 'some_fn' },
+    { id: 'mc_new_existing_prefix', status: 'fail', detail: 'x' },
+  ] };
+  const out = sanity.apply(res);
+  ok(res.manual_results[0].status === 'fail', '将来ガード: _deterministic付きfailは降格しない');
+  ok(res.manual_results[1].status === 'warn' && out.count === 1, '将来ガード: 通常failは従来どおり降格');
+}
+
 console.log(fail === 0 ? '\n✅ colorsanity 全テスト合格' : `\n❌ colorsanity ${fail}件 失敗`);
 process.exit(fail === 0 ? 0 : 1);

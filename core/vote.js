@@ -12,7 +12,7 @@
   const RESULT_KEYS = ['results', 'nev_results', 'manual_results'];
 
   function mode(arr) { // 最頻値（同数なら先勝ち）
-    const c = {}; let best = null, bestN = 0;
+    const c = Object.create(null); let best = null, bestN = 0; // 「__proto__」等の値でも計数が壊れないように
     arr.forEach(v => { const k = String(v); c[k] = (c[k] || 0) + 1; if (c[k] > bestN) { bestN = c[k]; best = v; } });
     return { value: best, count: bestN, unanimous: bestN === arr.length };
   }
@@ -88,7 +88,7 @@
       const rep = rs.find(r => normStatus(r.status) === String(m.value)) || rs[0];
       // N1: confidence を捨てず伝播（最悪値集約＝1回でも low なら low。安全側）。
       // 多回モードで「確信度low→要確認」の安全網が消える逆転を防ぐ。
-      const CONF_RANK = { low: 0, '低': 0, '低い': 0, mid: 1, medium: 1, '中': 1, high: 2, '高': 2, '高い': 2 }; // B-2: 表記ゆれ正規化（aggregate.jsと同基準）
+      const CONF_RANK = Object.assign(Object.create(null), { low: 0, '低': 0, '低い': 0, mid: 1, medium: 1, '中': 1, high: 2, '高': 2, '高い': 2 }); // B-2: 表記ゆれ正規化（aggregate.jsと同基準）
       let worstConf;
       rs.forEach(r => {
         const c = String(r.confidence == null ? '' : r.confidence).trim().toLowerCase();

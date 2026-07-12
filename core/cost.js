@@ -27,12 +27,14 @@
     const pricing = PRICING[modelId] || PRICING['gemini-2.5-pro'];
     const usdToJpy = (typeof rate === 'number' && rate > 0) ? rate : DEFAULT_USD_TO_JPY;
 
-    const inputTokens = usage.promptTokenCount || 0;
+    // トークン数が非数値でも NaN を作らない（NaNが月次累計を汚染すると上限警告が消える/黙って0リセットされる）
+    const num = v => { const n = Number(v); return (Number.isFinite(n) && n > 0) ? n : 0; };
+    const inputTokens = num(usage.promptTokenCount);
     // Gemini 2.5系の思考(thinking)トークンは出力レートで課金される。candidates だけだと過小計上になり、
     // 料金上限の警告・超過判定が遅れる/発火しない（組織方針の信頼性に直結）。thoughts を出力に合算する。
-    const thoughtTokens = usage.thoughtsTokenCount || 0;
-    const outputTokens = (usage.candidatesTokenCount || 0) + thoughtTokens;
-    const totalTokens = usage.totalTokenCount || (inputTokens + outputTokens);
+    const thoughtTokens = num(usage.thoughtsTokenCount);
+    const outputTokens = num(usage.candidatesTokenCount) + thoughtTokens;
+    const totalTokens = num(usage.totalTokenCount) || (inputTokens + outputTokens);
 
     const inputCostUsd = (inputTokens / 1_000_000) * pricing.input;
     const outputCostUsd = (outputTokens / 1_000_000) * pricing.output;
@@ -110,7 +112,7 @@
 
   // API 1回分の料金を累計に加算し、加算後の状態を返す。
   CapTracker.prototype.addCost = function (costEstimate) {
-    const jpy = costEstimate && typeof costEstimate.totalCostJpy === 'number' ? costEstimate.totalCostJpy : 0;
+    const jpy = costEstimate && Number.isFinite(costEstimate.totalCostJpy) ? costEstimate.totalCostJpy : 0; // NaN（typeofはnumber）を累計に混ぜない
     const next = Math.round((this.getTotalJpy() + jpy) * 100) / 100;
     this.store.set(next);
     return this.getState();

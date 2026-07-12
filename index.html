@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NeV 図面チェックツール（統合版）</title>
-  <link rel="stylesheet" href="css/style.css?v=20260710f">
+  <link rel="stylesheet" href="css/style.css?v=20260711a">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -90,7 +90,7 @@
         <div class="upload-area" id="uploadArea">
           <div style="font-size:32px;">&#128196;</div>
           <p>PDF ファイルをドラッグ＆ドロップ または</p>
-          <label class="btn btn-primary btn-sm">ファイルを選択<input type="file" id="fileInput" accept=".pdf" hidden></label>
+          <label class="btn btn-primary btn-sm">ファイルを選択<input type="file" id="fileInput" accept=".pdf" hidden disabled></label>
           <p class="upload-note">対応形式: PDF（最大約13MB）</p>
         </div>
         <div class="file-info" id="fileInfo" style="display:none;margin-top:12px;">
@@ -168,24 +168,24 @@
   <!-- 波④: Excelエクスポート用 SheetJS（旧・配線ルート図ツールと同じCDN）。読込失敗時は app.js がボタンを無効化 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <!-- core -->
-  <script src="core/util.js?v=20260710f"></script>
-  <script src="core/pdf.js?v=20260710f"></script>
-  <script src="core/gemini.js?v=20260710f"></script>
-  <script src="core/cost.js?v=20260710f"></script>
-  <script src="core/aggregate.js?v=20260710f"></script>
-  <script src="core/deterministic.js?v=20260710f"></script>
-  <script src="core/reconcile.js?v=20260710f"></script>
-  <script src="core/vote.js?v=20260710f"></script>
-  <script src="core/colorsanity.js?v=20260710f"></script>
-  <script src="core/verdict.js?v=20260710f"></script>
-  <script src="core/rules-registry.js?v=20260710f"></script>
-  <script src="core/prompt.js?v=20260710f"></script>
+  <script src="core/util.js?v=20260711a"></script>
+  <script src="core/pdf.js?v=20260711a"></script>
+  <script src="core/gemini.js?v=20260711a"></script>
+  <script src="core/cost.js?v=20260711a"></script>
+  <script src="core/aggregate.js?v=20260711a"></script>
+  <script src="core/deterministic.js?v=20260711a"></script>
+  <script src="core/reconcile.js?v=20260711a"></script>
+  <script src="core/vote.js?v=20260711a"></script>
+  <script src="core/colorsanity.js?v=20260711a"></script>
+  <script src="core/verdict.js?v=20260711a"></script>
+  <script src="core/rules-registry.js?v=20260711a"></script>
+  <script src="core/prompt.js?v=20260711a"></script>
   <!-- rules -->
-  <script src="rules/mitori.js?v=20260710f"></script>
-  <script src="rules/heimen.js?v=20260710f"></script>
-  <script src="rules/haisen.js?v=20260710f"></script>
-  <script src="rules/keitou.js?v=20260710f"></script>
+  <script src="rules/mitori.js?v=20260711a"></script>
+  <script src="rules/heimen.js?v=20260711a"></script>
+  <script src="rules/haisen.js?v=20260711a"></script>
+  <script src="rules/keitou.js?v=20260711a"></script>
   <!-- app -->
-  <script src="app.js?v=20260710f"></script>
+  <script src="app.js?v=20260711a"></script>
 </body>
 </html>

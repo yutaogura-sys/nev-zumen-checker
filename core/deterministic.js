@@ -110,27 +110,49 @@
       const ed1 = (root.NevUtil && root.NevUtil.editDistance1)
         || (typeof require !== 'undefined' ? (function () { try { return require('./util.js').editDistance1; } catch (e) { return null; } })() : null);
       const corrections = [];
+      // F-2: 数字1文字差（PFD-22↔PFD-28等）は「誤読」と「実在する別サイズ」の両方があり得るため、
+      // 適合側への補正を許さない（誤読なら英字差=PFP→PFD等が典型）。数字差は differsInDigit=true を返し、
+      // 呼び出し側で「要目視のwarn」として扱う（安全網を自分で無効化しない）。
+      const digitDiff = (a, b) => {
+        if (a.length !== b.length) return /\d/.test(a) || /\d/.test(b); // 挿入/削除は数字関与なら数字差扱い（保守側）
+        for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return /\d/.test(a[i]) || /\d/.test(b[i]);
+        return false;
+      };
       const correct = (s, candidates) => {
-        if (!ed1 || !s) return s;
-        if (candidates.includes(s)) return s;
-        const hit = candidates.find(c => ed1(s, c) === 1);
-        if (hit) { corrections.push(`${s}→${hit}`); return hit; }
-        return s;
+        if (!ed1 || !s) return { value: s, digit: false };
+        if (candidates.includes(s)) return { value: s, digit: false };
+        const hits = candidates.filter(c => ed1(s, c) === 1);
+        // 曖昧補正（1文字差の候補が複数）は先勝ちで無警告確定しない＝どれへの誤読か判別不能のため要目視
+        if (hits.length > 1) return { value: s, digit: false, ambiguous: hits };
+        const hit = hits[0];
+        if (hit) {
+          const dg = digitDiff(s, hit);
+          corrections.push(`${s}→${hit}${dg ? '(数字差・要目視)' : ''}`);
+          return { value: hit, digit: dg };
+        }
+        return { value: s, digit: false };
       };
       const mismatches = [];
       let checked = 0;
       pairs.forEach(p => {
         if (p == null) return; // null要素でTypeErrorにしない
         let cable = norm(Array.isArray(p) ? p[0] : p.cable);
-        let conduit = norm(Array.isArray(p) ? p[1] : p.conduit);
-        if (!cable || !conduit) return;
-        cable = correct(cable, Object.keys(specNorm));
+        const conduitRaw = norm(Array.isArray(p) ? p[1] : p.conduit);
+        if (!cable || !conduitRaw) return;
+        const cc = correct(cable, Object.keys(specNorm));
+        cable = cc.value; // ケーブル側の補正は「照合対象に引き込む」＝締め方向にのみ働くので数字差も許容
         const allowed = specNorm[cable];
         if (!allowed) return; // 仕様表に無いケーブルは検算対象外
         checked++;
-        conduit = correct(conduit, allowed);
-        if (!allowed.includes(conduit)) {
-          mismatches.push(`${cable}→${conduit}（適合: ${allowed.join('/')}）`);
+        const co = correct(conduitRaw, allowed);
+        if (co.ambiguous) {
+          // 複数候補と1文字差: どれへの誤読か判別不能 → 適合扱いにせず要目視のwarn
+          mismatches.push(`${cable}→${conduitRaw}（適合候補${co.ambiguous.join('/')}のいずれとも1文字差＝判別不能）`);
+        } else if (co.digit) {
+          // 数字1文字差: 誤読か実サイズ違いか判別不能 → 適合扱いにせず要目視のwarn（F-2）
+          mismatches.push(`${cable}→${conduitRaw}（適合候補${co.value}と数字1文字差＝誤読か別サイズかの両可能性）`);
+        } else if (!allowed.includes(co.value)) {
+          mismatches.push(`${cable}→${co.value}（適合: ${allowed.join('/')}）`);
         }
       });
       const corrNote = corrections.length ? `（表記補正: ${corrections.join(', ')}＝1文字差の誤読とみなし補正）` : '';
@@ -285,7 +307,7 @@
   // 長さ照合のみ＝記載要件全体を保証しない）の pass が広い必須項目を合格化する false PASS を禁止する。
   registry.space_width_2500.trustLoosen = true;   // 対象チェック＝「幅2500mm以上」そのもの
   registry.demand_rated_count.trustLoosen = true; // 対象チェック＝「デマンド要否」そのもの（LB込み）
-  const SEVERITY = { pass: 0, na: 0, warn: 1, fail: 2 };
+  const SEVERITY = Object.assign(Object.create(null), { pass: 0, na: 0, warn: 1, fail: 2 }); // 「__proto__」status文字列で単調性ガードが無効化されるのを防ぐ
   const _normSt = s => String(s == null ? '' : s).trim().toLowerCase();
 
   // rule.deterministic を実行し、{ checkId: {status, detail} } の上書き指示を返す
@@ -350,7 +372,16 @@
       // スタンプは根拠必須・確信度lowの両ゲートを外す強い信頼マークであり、status を変えていない
       // エコー（例: wire_reconcile の pass が AI の pass に重なる）に付けると、AIの無根拠passが
       // コード検算の権威でゲートを素通りする（2パス化でPass1抽出が単発になった今、especially危険）。
+      // F-1/F-4: trustLoosen fn（検算スコープ＝項目要件の完全一致を宣言済み）の同statusエコーは
+      // 権威スタンプを付与してよい（幅[2500,2600]検証済のpassに根拠ゲートが発火する逆転や、
+      // デマンド不要naがS2でwarn化される自己矛盾を防ぐ）。非trustLoosen（wire_reconcile等の
+      // サブセット検算）のエコーは従来どおり注記のみ＝B-2の本来目的（無根拠passのゲートバイパス根絶）を維持。
       if (_normSt(ov.status) === _normSt(cur.status)) {
+        const fnDefEcho = registry[ov.fn];
+        if (fnDefEcho && fnDefEcho.trustLoosen) {
+          arr[byId[id]] = Object.assign({}, cur, { status: ov.status, detail: ov.detail, _deterministic: ov.fn });
+          return;
+        }
         arr[byId[id]] = Object.assign({}, cur, {
           detail: ((cur.detail || '') + ' 【自動検算・同判定】' + (ov.detail || '')).trim(),
           _deterministicNote: ov.fn,

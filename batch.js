@@ -51,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     wrap.querySelectorAll('input[type=file]').forEach(inp => {
       inp.addEventListener('change', e => {
+        if (running) { alert('チェック実行中はファイルを変更できません。キャンセルするか完了を待ってください。'); e.target.value = ''; return; }
         const t = e.target.dataset.type; const f = e.target.files[0];
         if (f) { state.files[t] = f; wrap.querySelector(`[data-name="${t}"]`).textContent = f.name; }
         updateRun();
@@ -61,8 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateRun() {
     const n = Object.keys(state.files).length;
     const ready = state.apiKey && n >= 1;
-    $('runBtn').disabled = !ready;
-    $('runNote').textContent = ready ? `${n}枚の図面をチェックします` : 'APIキーと1枚以上の図面を設定してください';
+    $('runBtn').disabled = !ready || running; // 実行中はファイル変更等で再有効化しない
+    $('runNote').textContent = running ? '実行中…' : (ready ? `${n}枚の図面をチェックします` : 'APIキーと1枚以上の図面を設定してください');
     renderCostBar($('costBar'));
   }
 
@@ -109,6 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('recheckBtn').addEventListener('click', () => { $('resultSection').style.display = 'none'; $('errorSection').innerHTML = ''; window.scrollTo({ top: 0, behavior: 'smooth' }); });
   // 波④-3: 実行キャンセル（AbortController）。中断しても判定済みの図面は捨てず部分表示する。
   let abortCtrl = null;
+  let running = false; // 実行中の再入・二重実行防止（実行中のファイル変更でrunBtnが再有効化されるのを防ぐ）
   $('cancelBtn').addEventListener('click', () => {
     if (!abortCtrl) return;
     abortCtrl.abort();
@@ -117,8 +119,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   async function run() {
+    if (running) return; // 二重実行防止（並走すると二重課金・キャンセル不能化・結果の相互上書きが起きる）
     const st = capTracker.getState();
     if (st.status === 'over' && !confirm(`料金上限を ${st.overageJpy.toLocaleString()} 円 オーバーしています。続行しますか？`)) return;
+    running = true;
     $('errorSection').innerHTML = ''; $('resultSection').style.display = 'none';
     $('loadingSection').style.display = 'block'; $('runBtn').disabled = true;
     abortCtrl = new AbortController();
@@ -128,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const entries = Object.keys(state.files); // types
     const done = [];
     const errors = [];
+    try {
     // 各図面を個別に try/catch。1枚が失敗しても他の（課金済み）結果を捨てず部分表示する。
     for (const type of entries) {
       // M2: 図面ループ途中でも上限超過をチェック（超過したまま残り図面へ課金継続しない・組織要件）
@@ -143,14 +148,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (err && err.usageMetadata) { const c = NevCost.estimateCost(err.usageMetadata, state.model); if (c) capTracker.addCost(c); }
         // 波④-3: キャンセル → 以降の図面を中止。判定済み（課金済み）の図面は捨てず部分表示。
         if (err && err.type === 'aborted') {
-          errors.push({ type, message: 'キャンセルしました（実行済み分は課金されています）' });
+          errors.push({ type, message: 'キャンセルしました（実行済み・送信済みの呼び出し分は課金されます）' });
           break;
         }
         errors.push({ type, message: err && err.message || String(err) });
       }
     }
-    abortCtrl = null;
-    $('loadingSection').style.display = 'none'; $('runBtn').disabled = false; updateRun();
+    // B-2: キャンセル等で中断した場合、未着手の図面を「未実行」として明示する
+    //（無言スキップだと未検査の図面を検査済みと誤読しうる）
+    entries.filter(t => !done.some(d => d.type === t) && !errors.some(er => er.type === t))
+      .forEach(t => errors.push({ type: t, message: 'キャンセルにより未実行（この図面は判定されていません）' }));
+    } finally {
+      abortCtrl = null;
+      running = false;
+      $('loadingSection').style.display = 'none'; $('runBtn').disabled = false; updateRun();
+    }
 
     if (errors.length) {
       $('errorSection').innerHTML = `<div class="error-card"><strong>一部の図面でエラー（他は結果を表示します）</strong>` +
@@ -220,5 +232,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   buildSlots();
+  // pdf.js（CDN）の読み込み失敗を明示する（index側と同じガード。放置すると無関係なエラー文言に化ける）
+  if (typeof window.pdfjsLib === 'undefined' || !window.pdfjsLib) {
+    $('errorSection').innerHTML += '<div class="error-card"><strong>⚠ PDF処理ライブラリ（pdf.js）の読み込みに失敗しました</strong><p>ネットワーク接続（CDNへのアクセス）を確認して、ページを再読み込みしてください。このままではPDFを処理できません。</p></div>';
+    document.querySelectorAll('input[type=file]').forEach(i => { i.disabled = true; });
+  }
   updateRun();
 });
