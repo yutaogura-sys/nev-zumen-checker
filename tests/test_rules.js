@@ -17,8 +17,9 @@ eq('登録済み種別', rulesReg.listTypes().map(d => d.type).sort(), ['haisen'
 const expected = [
   ['mitori', 'kiso', 14], ['mitori', 'mokutekichi', 19],
   ['heimen', 'kiso', 28], ['heimen', 'mokutekichi', 30],
-  ['haisen', 'kiso', 44], ['haisen', 'mokutekichi', 45],
-  ['keitou', 'kiso', 54], ['keitou', 'mokutekichi', 50],
+  // R7補正追加項目（制御装置: haisen設置位置/keitou仕様。改訂対比表p57-58）で各+1（2026-07-13）
+  ['haisen', 'kiso', 45], ['haisen', 'mokutekichi', 46],
+  ['keitou', 'kiso', 55], ['keitou', 'mokutekichi', 51],
 ];
 for (const [type, bt, want] of expected) eq(`${type}/${bt} 項目数`, rulesReg.resolveChecks(type, bt).length, want);
 

@@ -123,6 +123,9 @@
         description: '課金機などの別体装置がある場合の配線が電気系統図に記載されていること。' },
       { id: 'nev_lighting', group: 'nev', category: 'nev_lighting', label: '電灯配線の記載', required: false, condition: '電灯設備がある場合',
         description: '充電設備・充電スペースを照らす電灯の配線がある場合、電気系統図に記載されていること。配線種類、タイマースイッチ等の設置箇所も記載。' },
+      // ── R7補正で追加（手引き5-9-4・改訂対比表p58）: 制御装置の仕様 ──
+      { id: 'nev_control_device_spec', group: 'nev', category: 'nev_demand', label: '制御装置のメーカー名・型式の記載（R7補正追加）', required: false, condition: '制御装置を設置する工事がある場合',
+        description: '制御装置（充電用コンセント等と組み合わせるOCPP制御装置・課金デバイス等の別体装置）を設置する場合、そのメーカー名と型式が記載されていること。R7補正の手引き5-9-4【工事の内容に応じて記載する項目】《制御装置の仕様》で追加された項目。機器シンボル付近・凡例・機器リスト・注記欄・2ページ目以降も含め全領域を確認すること。制御装置を設置しない工事の場合はna。' },
       { id: 'nev_demand', group: 'nev', category: 'nev_demand', label: 'デマンド制御の記載', required: false, condition: '設置台数が主幹ATの定格動作台数を超える場合',
         description: '主幹ATの定格動作台数（100%出力可能台数）を設置台数が超える場合、デマンドコントロールの記載が必須。定格動作台数: 40AT→1台、75AT→2台、100AT→3台、125AT→4台、150AT→5台、200AT→6台、225AT→7台、250AT→8台。設置台数≦定格動作台数の場合はna。' },
       { id: 'nev_existing_diagram', group: 'nev', category: 'nev_existing', label: '既存充電設備の電気系統図の記載', required: false, condition: '既存充電設備がある場合（増設・撤去新設）',
