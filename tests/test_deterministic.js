@@ -44,8 +44,11 @@ eq('デマンド必要 & pass → passのまま', det.registry.demand_rated_coun
 // 主幹150AT(定格5) ≥ 設置3台 → 不要。failなら na へ緩和
 eq('デマンド不要 & fail → na緩和', det.registry.demand_rated_count({ main_breaker_at: 150, charger_count: 3 }, { currentStatus: 'fail' }).status, 'na');
 // ①【LB/同時運転台数】8台設置でもLBで同時2台なら、定格内 → na（正しいnaをfailにしない）
-eq('①LB: 125AT(定格4) 総8台/同時2台 → 定格内でna', det.registry.demand_rated_count({ main_breaker_at: 125, charger_count: 8, simultaneous_count: 2 }, { currentStatus: 'na' }).status, 'na');
-eq('①LB: 100AT(定格3) 総8台/同時2台 & fail → na緩和', det.registry.demand_rated_count({ main_breaker_at: 100, charger_count: 8, simultaneous_count: 2 }, { currentStatus: 'fail' }).status, 'na');
+// R7補正基準（2026-07-13変更）: 容量評価は常に総設置台数。LB/デマンドは容量の代替にならない
+eq('R7h: 125AT(定格4) 総8台/同時2台 → LBでも容量不足の可能性warn', det.registry.demand_rated_count({ main_breaker_at: 125, charger_count: 8, simultaneous_count: 2 }, { currentStatus: 'na' }).status, 'warn');
+eq('R7h: 100AT(定格3) 総8台/同時2台 & fail → LBを理由に緩めない(fail維持)', det.registry.demand_rated_count({ main_breaker_at: 100, charger_count: 8, simultaneous_count: 2 }, { currentStatus: 'fail' }).status, 'fail');
+// 容量充足でもデマンド使用の形跡(同時稼働台数の記載)があれば、記載不備の可能性を残す=緩めない
+ok(det.registry.demand_rated_count({ main_breaker_at: 150, charger_count: 4, simultaneous_count: 2 }, { currentStatus: 'fail' }).unfired === true, 'R7h: 容量充足＋デマンド使用形跡あり → fail をnaへ緩めない(参考注記のみ)');
 // ①同時運転台数が定格超なら、総台数に関わらず要確認（warn）
 eq('①LB: 100AT(定格3) 同時4台 & na → warn', det.registry.demand_rated_count({ main_breaker_at: 100, charger_count: 4, simultaneous_count: 4 }, { currentStatus: 'na' }).status, 'warn');
 // ⑤ 数値欠落は検算不能 → unfired（noteOnly注記へ）
@@ -149,7 +152,7 @@ ok(ovPartBr.nev_branch_breaker_capacity && ovPartBr.nev_branch_breaker_capacity.
 // ── main_at_per_count（D-2復元・LB対応）──
 eq('AT充足: 75AT×4台→warn(必要125AT)', det.registry.main_at_per_count({ main_breaker_at: 75, charger_count: 4 }, {}).status, 'warn');
 ok(det.registry.main_at_per_count({ main_breaker_at: 125, charger_count: 4 }, {}).unfired === true, 'AT充足: 125AT×4台→参考注記(passは付与しない)');
-ok(det.registry.main_at_per_count({ main_breaker_at: 75, charger_count: 8, simultaneous_count: 2 }, {}).unfired === true, 'AT充足: LB同時2台なら75ATで充足（参考注記）');
+eq('R7h: 75AT×総8台(同時2台) → LBでも総台数基準で不足warn', det.registry.main_at_per_count({ main_breaker_at: 75, charger_count: 8, simultaneous_count: 2 }, {}).status, 'warn');
 ok(det.registry.main_at_per_count({ main_breaker_at: 100 }, {}).unfired === true, 'AT充足: 台数欠落→unfired');
 
 console.log(fail === 0 ? '\n✅ deterministic 全テスト合格' : `\n❌ deterministic ${fail}件 失敗`);

@@ -75,23 +75,31 @@
       if (rated == null) {
         return { unfired: true, detail: `【自動検算未実施】主幹${at}AT が定格動作台数テーブルの範囲外のため、デマンド制御要否の自動検算をスキップしました。目視確認してください。` };
       }
-      // LB設計では同時運転台数で評価。simulが有効ならそれを優先、無ければ総設置台数で保守的に評価。
-      const effective = (simul != null) ? simul : total;
-      const lbNote = (simul != null && total != null && simul !== total) ? `（同時運転${simul}台/総設置${total}台）` : '';
+      // R7補正（手引き・事業要件）: 複数基設置は「全数の承認定格出力での同時稼働」を前提に
+      // 電気設備を担保する必要がある。よって評価は常に総設置台数（LB/デマンドは容量の代替にならない）。
+      // 総台数が無い場合のみ、参考として同時運転台数で下限評価（それでも超過ならwarnの根拠になる）。
+      const effective = (total != null) ? total : simul;
+      const lbInUse = (simul != null && total != null && simul !== total);
+      const lbNote = lbInUse ? `（同時運転${simul}台の記載あり/総設置${total}台）` : '';
       const cur = ctx && ctx.currentStatus;
       const required = effective > rated;
       if (required) {
-        // デマンド制御(またはLB等の抑制)が必要な可能性。na と判定されていても強制failにはせず warn で矛盾を提示。
+        // R7補正要件により、容量不足の可能性。na と判定されていても強制failにはせず warn で矛盾を提示。
         if (cur === 'na') {
-          return { status: 'warn', detail: `【自動再検証】主幹${at}AT(定格${rated}台) < 同時運転${effective}台${lbNote} → デマンド制御/LB等の記載が必要な可能性があります。非該当(na)と判定されていますが、抑制措置の記載有無を目視確認してください。` };
+          return { status: 'warn', detail: `【自動再検証】主幹${at}AT(定格${rated}台) < 総設置${effective}台${lbNote} → R7補正の手引き（事業要件）は全数の定格出力での同時稼働を前提とした電気設備を求めており、容量不足の可能性があります。デマンド制御/LBの実装は認められますが容量の代替にはなりません。非該当(na)と判定されていますが、主幹容量とデマンド制御の記載を目視確認してください。` };
         }
-        return { status: cur || 'warn', detail: `【自動再検証】主幹${at}AT(定格${rated}台) < 同時運転${effective}台${lbNote} → デマンド制御/LB等の記載が必須です。` };
+        return { status: cur || 'warn', detail: `【自動再検証】主幹${at}AT(定格${rated}台) < 総設置${effective}台${lbNote} → R7補正要件（全数フル出力の同時稼働前提）に対する容量不足の可能性。デマンド制御の記載と併せて要確認。` };
       }
-      // 不要（同時運転 ≤ 定格）。AIの fail は過剰指摘の可能性 → na（非該当）へ緩和。
+      // 容量は充足（総設置 ≤ 定格）。ただしデマンドコントローラー使用の形跡（同時運転台数の記載）が
+      // ある場合は⑩の記載必須のため、AIのfailを容量根拠でnaへ緩めない（記載不備の可能性を残す）。
+      if (lbInUse) {
+        return { unfired: true, detail: `【自動検算・参考】主幹${at}AT(定格${rated}台) ≥ 総設置${effective}台で容量は充足。ただしデマンド/LB使用の形跡${lbNote}があるため、⑩デマンド制御の記載（機能注記＋同時稼働台数）はAI判定・目視で確認してください。` };
+      }
+      // デマンド使用の形跡なし＋容量充足 → ⑩は非該当。AIの fail は過剰指摘の可能性 → na へ緩和。
       if (cur === 'fail') {
-        return { status: 'na', detail: `【自動再検証】主幹${at}AT(定格${rated}台) ≥ 同時運転${effective}台${lbNote} → デマンド制御は不要（非該当）。` };
+        return { status: 'na', detail: `【自動再検証】主幹${at}AT(定格${rated}台) ≥ 総設置${effective}台・デマンド使用の形跡なし → デマンド制御は非該当。` };
       }
-      return { status: cur || 'na', detail: `【自動再検証】主幹${at}AT(定格${rated}台) ≥ 同時運転${effective}台${lbNote} → デマンド制御不要。` };
+      return { status: cur || 'na', detail: `【自動再検証】主幹${at}AT(定格${rated}台) ≥ 総設置${effective}台 → デマンド制御不要（使用時は記載必須）。` };
     },
 
     // 配線ルート図: ケーブル種別に対する配管サイズの適合を仕様表(rule.meta.spec.cableConduitMatch)で照合
@@ -165,7 +173,8 @@
       return { unfired: true, detail: `【自動検算・参考】ケーブル⇔配管サイズは手持ちの仕様表に適合（${checked}区間照合）。${corrNote}ただし仕様表が原本未検証のため合格判定には用いません。目視確認してください。` };
     },
 
-    // 電気系統図: 台数（LB時は同時運転台数）に対する主幹ATの充足をコード照合（D-2の復元・LB対応版）
+    // 電気系統図: 総設置台数に対する主幹ATの充足をコード照合（R7補正: 全数フル出力の同時稼働前提。
+    // LB/デマンドは容量の代替にならないため、同時運転台数による緩和は行わない=2026-07-13基準変更）
     // 旧・電気系統図ツールの台数別仕様表コード照合のうち、手引き準拠のAT表（DEMAND_RATED_COUNT）で
     // 検証できる部分のみ復元。不足の可能性→warn（締め方向のみ）。充足は参考注記（passは付与しない＝
     // 幹線ケーブル・接地線など他要素の妥当性はこの表では保証できないため）。
@@ -174,8 +183,9 @@
       const total = toNum(di && (di.charger_count != null && String(di.charger_count).trim() !== '' ? di.charger_count : di.charging_count));
       const simul = toNum(di && di.simultaneous_count);
       if (at == null || (total == null && simul == null)) return { unfired: true };
-      const effective = (simul != null) ? simul : total;
-      const lbNote = (simul != null && total != null && simul !== total) ? `（同時運転${simul}台/総設置${total}台）` : '';
+      // R7補正: 全数の定格出力での同時稼働を前提とした設備が要件 → 常に総設置台数で評価
+      const effective = (total != null) ? total : simul;
+      const lbNote = (simul != null && total != null && simul !== total) ? `（同時運転${simul}台の記載あり。R7補正はLBでも全数フル出力前提の設備を要求）` : '';
       // effective台を100%運転できる最小AT（表の昇順で最初に rated>=effective となるキー）
       const keys = Object.keys(DEMAND_RATED_COUNT).map(Number).sort((a, b) => a - b);
       const minKey = keys.find(k => DEMAND_RATED_COUNT[k] >= effective);
@@ -183,7 +193,7 @@
         return { unfired: true, detail: `【自動検算未実施】台数${effective}台が定格動作台数テーブルの範囲外（最大8台）のため、主幹AT充足の自動検算をスキップしました。目視確認してください。` };
       }
       if (at < minKey) {
-        return { status: 'warn', detail: `【自動再検証】主幹${at}AT は ${effective}台${lbNote}の同時100%運転に必要な ${minKey}AT を下回る可能性があります。デマンド制御/LBの有無と併せて容量の妥当性を目視確認してください。` };
+        return { status: 'warn', detail: `【自動再検証】主幹${at}AT は 総設置${effective}台${lbNote}の同時100%運転に必要な ${minKey}AT を下回る可能性があります。R7補正の手引き（事業要件）は全数の定格出力での同時稼働を前提とした電気設備を求めるため、容量の妥当性を目視確認してください（LB/デマンドは容量の代替になりません）。` };
       }
       return { unfired: true, detail: `【自動検算・参考】主幹${at}AT ≥ ${effective}台${lbNote}に必要な${minKey}AT（手引き定格表）。幹線・接地線等の仕様妥当性は別途目視確認してください。` };
     },
