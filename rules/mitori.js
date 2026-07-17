@@ -41,8 +41,11 @@
     checks: [
       // ── 共通（基礎・目的地の両方）──
       { id: 'setting_place', category: 'basic_info', label: '設置場所の記載',
-        description: '申請で入力した設置場所名称（略称不可）が表題欄に記載されているか。例）○○モール 充電設備設置工事',
+        description: '申請で入力した設置場所名称（略称不可）が表題欄に記載されているか。例）○○モール 充電設備設置工事※申請書で入力した名称との一致（略称不可）は本ツールでは照合できないため判定対象外（記載有無と読取名称の提示のみ）。読み取った名称をdetailに必ず記載し、申請書との一致は人手で確認すること。',
         required: true, critical: true },
+      { id: 'removal_equipment_shown', category: 'basic_info', label: '撤去する充電設備の明示（撤去がある場合）', required: false,
+        condition: '撤去予定の充電設備がある場合（撤去新設・入替）',
+        description: '撤去予定の充電設備がある場合、撤去する充電設備が図面上に示されているか（手引き5-9前文「撤去する充電設備を示してください」）。入替（同一箇所の撤去新設）の場合は現在と入替後の充電スペースの区別、既設・自費設置がある場合はそれぞれの設置場所の区別が確認できること（記入例3/4・4/4頁）。撤去がない案件はna。' },
       { id: 'drawing_name', category: 'basic_info', label: '図面名称「設置場所見取図」の記載',
         description: '図面名称として正確に「設置場所見取図」が表題欄に記載されているか。不備例：設置見取図、設置場所図等は不可',
         required: true, critical: true },
@@ -52,7 +55,7 @@
         description: '縮尺（例: 1/150）が表題欄に記載されているか。縮尺サイズの指定なし。市販の地図等で縮尺が不明の場合は「-」と記載',
         required: true },
       { id: 'creation_date', category: 'basic_info', label: '作成日の記載',
-        description: '作成日が表題欄に記載されているか（本補助金の事業開始日以降であること）', required: true },
+        description: '作成日が表題欄に記載されているか。読み取った日付をdetailに必ず記載。※手引きの要件「本補助金の事業開始日以降」は、事業開始日が本ツールでは照合できないため人手で確認すること。', required: true },
       { id: 'entrance', category: 'drawing_content', label: '充電設備設置場所の入口',
         description: '充電設備設置場所への入口が全て記載されているか（▼マーク・「出入口」テキスト等）', required: true },
       { id: 'charging_space', category: 'drawing_content', label: '充電スペースの図示',

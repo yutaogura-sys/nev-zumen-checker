@@ -36,7 +36,7 @@
     checks: [
       // ── 表題欄 ──
       { id: 'setting_place', category: 'title_block', label: '設置場所名称の記載',
-        description: '表題欄の「設置場所」欄に、申請で入力した設置場所名称（略称不可）が記載されているか。例）○○マンション、○○ホテル 等',
+        description: '表題欄の「設置場所」欄に、申請で入力した設置場所名称（略称不可）が記載されているか。例）○○マンション、○○ホテル 等※申請書で入力した名称との一致（略称不可）は本ツールでは照合できないため判定対象外（記載有無と読取名称の提示のみ）。読み取った名称をdetailに必ず記載し、申請書との一致は人手で確認すること。',
         required: true },
       { id: 'drawing_name', category: 'title_block', label: '図面名称「平面図」の記載',
         description: '表題欄の「図面名称」欄に正確に「平面図」と記載されているか。「新設 平面図」「既設 平面図」も可。不備例：平面配置図、配置図、レイアウト図等は不可',
@@ -45,11 +45,11 @@
         description: '表題欄に工事名が記載されているか。正解例：「普通充電設備設置工事」「充電設備設置工事」等', required: true },
       { id: 'creator', category: 'title_block', label: '作成者の記載',
         description: '表題欄の「作成者」欄に会社名または個人名が記載されているか', required: true },
-      { id: 'scale', category: 'title_block', label: '縮尺の記載',
-        description: '表題欄の「縮尺」欄に縮尺が記載されているか。正解例：A3:1/100、1/150 等。サイズ指定なし。不明の場合は「-」も可',
+      { id: 'scale', category: 'title_block', label: '縮尺の記載（1/100以上）',
+        description: '表題欄に縮尺が記載され、かつ1/100以上（分母が100以下。例: 1/50, 1/100は可。1/150, 1/200は不可）であるか（手引き5-9-2基本情報「縮尺（１／１００以上）」）。縮尺の記載がない・「-」はfail。1/100より縮小（分母>100）はwarn（要確認）。',
         required: true },
       { id: 'creation_date', category: 'title_block', label: '作成日の記載',
-        description: '表題欄の「作成日」欄に日付が記載されているか（YYYY年MM月DD日 形式等）', required: true },
+        description: '表題欄の「作成日」欄に日付が記載されているか（YYYY年MM月DD日 形式等）。読み取った日付をdetailに必ず記載。※手引きの要件は「本補助金の事業開始日以降」だが、事業開始日は本ツールでは照合できないため人手で確認すること。', required: true },
       // ── 充電スペース ──
       { id: 'space_labels', category: 'charging_space', label: '充電スペースの番号ラベル（ある場合）',
         description: '充電スペースに通し番号付きラベルがある場合、記載されているか。例：【充電スペース1】【充電スペース2】…、充電スペース×4 等。公式記入例は寸法線のみでラベルが無い様式もあるため、番号ラベルが無いことだけを理由に不合格にしない（無ければ na または warn）。',

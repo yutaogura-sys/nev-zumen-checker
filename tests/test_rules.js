@@ -15,10 +15,11 @@ eq('登録済み種別', rulesReg.listTypes().map(d => d.type).sort(), ['haisen'
 // 注: P0-5でrecall向上のため任意(required:false)チェックを追加済み。旧ツール比で項目数は意図的に増えている。
 //   mitori +parking_layout(kiso)/+signboard_height(moku)、heimen +8(共通)、haisen +dedicated_wiring_scope(共通)
 const expected = [
-  ['mitori', 'kiso', 14], ['mitori', 'mokutekichi', 19],
+  ['mitori', 'kiso', 15], ['mitori', 'mokutekichi', 20],
   ['heimen', 'kiso', 28], ['heimen', 'mokutekichi', 30],
   // R7補正追加項目（制御装置: haisen設置位置/keitou仕様。改訂対比表p57-58）で各+1（2026-07-13）
-  ['haisen', 'kiso', 45], ['haisen', 'mokutekichi', 46],
+  // 第三者パネル対応: haisen充電スペース場所(5-9-3必須)＋mitori撤去新設 で各+1（2026-07-13）
+  ['haisen', 'kiso', 46], ['haisen', 'mokutekichi', 47],
   ['keitou', 'kiso', 55], ['keitou', 'mokutekichi', 51],
 ];
 for (const [type, bt, want] of expected) eq(`${type}/${bt} 項目数`, rulesReg.resolveChecks(type, bt).length, want);

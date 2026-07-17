@@ -102,17 +102,17 @@
     checks: [
       // ══ NeV 共通（表題欄）══
       { id: 'setting_place', group: 'nev', category: 'title_block', label: '設置場所名称の記載',
-        description: '表題欄の「設置場所」欄に、申請で入力した設置場所名称（略称不可）が記載されているか', required: true },
+        description: '表題欄の「設置場所」欄に、申請で入力した設置場所名称（略称不可）が記載されているか※申請書で入力した名称との一致（略称不可）は本ツールでは照合できないため判定対象外（記載有無と読取名称の提示のみ）。読み取った名称をdetailに必ず記載し、申請書との一致は人手で確認すること。', required: true },
       { id: 'drawing_name', group: 'nev', category: 'title_block', label: '図面名称「配線ルート図」の記載',
-        description: '表題欄に「配線ルート図」と記載されているか。複数ページ時は「配線ルート図1」「配線ルート図2」も可。不備例：「配線図」「電気配線図」「ルート図」等は不可', required: true },
+        description: '表題欄に「配線ルート図」と記載されているか。複数ページ時は「配線ルート図1」「配線ルート図2」も可。不備例：「配線図」「配線系統図」「電気配線図」「ルート図」等は不可（手引き5-9-3不備事例）', required: true },
       { id: 'project_name', group: 'nev', category: 'title_block', label: '工事名の記載',
         description: '表題欄に工事名が記載されているか。正解例：「充電設備設置工事」「普通充電設備設置工事」等', required: true },
       { id: 'creator', group: 'nev', category: 'title_block', label: '作成者の記載',
         description: '表題欄の「作成者」欄に会社名または個人名が記載されているか', required: true },
-      { id: 'scale', group: 'nev', category: 'title_block', label: '縮尺の記載',
-        description: '表題欄の「縮尺」欄に縮尺が記載されているか。正解例：A3:1/100、1/150 等', required: true },
+      { id: 'scale', group: 'nev', category: 'title_block', label: '縮尺の記載（1/100以上）',
+        description: '表題欄に縮尺が記載され、かつ1/100以上（分母が100以下。例: 1/50, 1/100は可。1/150, 1/200は不可）であるか（手引き5-9-3基本情報「縮尺（１／１００以上）」）。縮尺の記載がない・「-」はfail。1/100より縮小（分母>100）はwarn（要確認）。', required: true },
       { id: 'creation_date', group: 'nev', category: 'title_block', label: '作成日の記載',
-        description: '表題欄に日付が記載されているか（YYYY年MM月DD日 形式等）', required: true },
+        description: '表題欄に日付が記載されているか（YYYY年MM月DD日 形式等）。読み取った日付をdetailに必ず記載。※手引きの要件は「本補助金の事業開始日以降」だが、事業開始日は本ツールでは照合できないため人手で確認すること。', required: true },
       // ══ NeV 共通（配線情報）══
       { id: 'wire_type', group: 'nev', category: 'wiring_info', label: '電線の種類・サイズの記載',
         description: '使用する電線の種類とサイズが記載されているか。正解例：CV5.5-3C、CV5sq-3C、CVT100sq 等', required: true },
@@ -130,6 +130,8 @@
       { id: 'conduit_material', group: 'nev', category: 'wiring_method', label: '配管材質の記載（金属製/合成樹脂）',
         description: '配管の材質区分が記載されているか。正解例：「金属製 G28」「合成樹脂 FEP30」等', required: true },
       // ══ NeV 共通（設備配置・寸法）══
+      { id: 'charging_space_location', group: 'nev', category: 'layout', label: '充電スペース場所の記載',
+        description: '充電スペースの場所が図面上に示されているか（手引き5-9-3【記載の必須項目】《充電スペース》。充電設備設置場所とは別の項目）。', required: true },
       { id: 'equipment_position', group: 'nev', category: 'layout', label: 'EV充電設備の配置位置',
         description: 'EV充電設備の配置が図面上に示されているか', required: true },
       { id: 'power_source', group: 'nev', category: 'layout', label: '電源元（受電盤/分電盤/キュービクル等）の記載',

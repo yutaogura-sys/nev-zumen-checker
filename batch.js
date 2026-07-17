@@ -83,6 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 1図面を判定 → { verdict(groups), detected_info } ──
   //   signal: AbortSignal（波④-3: 実行キャンセル。undefined なら従来どおり）
+  function root_colorsanity() { return (typeof NevColorSanity !== 'undefined') ? NevColorSanity : null; }
   async function checkOne(type, file, signal) {
     const rule = NevRules.getRule(type);
     let input;
@@ -94,15 +95,42 @@ document.addEventListener('DOMContentLoaded', () => {
     catch (e) { input = await NevPdf.pdfToImages(file, { maxPages: rule.meta.maxPages, renderScale: rule.settings.renderScale, maxPayloadBytes: rule.settings.maxPayloadBytes }); }
     const crop = await NevPdf.pdfToTitleBlockCrop(file).catch(() => null);
     if (crop) input.images = input.images.concat([crop]);
-    const promptText = NevPrompt.buildPrompt(rule, state.businessType);
-    const result = await NevGemini.callGeminiWithRetry(state.apiKey, input.images, promptText, state.model, info => { if (info && info.message) $('loadingText').textContent = `${rule.meta.drawingName}: ${info.message}`; }, { pass: 1, total: 1 }, { maxOutputTokens: rule.settings.maxOutputTokens, signal });
+    // 第2波: 配線ルート図の2パス（個別チェックとの精度パリティ。トグルで無効化可）
+    const useTwoPass = !!(rule.settings.twoPass && $('twoPassHaisen') && $('twoPassHaisen').checked);
+    let pass1Data = null;
+    if (useTwoPass) {
+      $('loadingText').textContent = `${rule.meta.drawingName}: 2段階読み取り 1/2（データ抽出）...`;
+      try {
+        const p1 = await NevGemini.callGeminiWithRetry(state.apiKey, input.images, NevPrompt.buildPass1Prompt(rule, state.businessType), state.model,
+          info => { if (info && info.message) $('loadingText').textContent = `${rule.meta.drawingName}: ${info.message}`; }, { pass: 1, total: 2 },
+          { maxOutputTokens: rule.settings.maxOutputTokens, signal });
+        const c1 = NevCost.estimateCost(p1._usageMetadata, p1._model);
+        if (c1) capTracker.addCost(c1);
+        pass1Data = p1.detected_info || null;
+      } catch (e1) {
+        if (e1 && e1.usageMetadata) { const c = NevCost.estimateCost(e1.usageMetadata, state.model); if (c) capTracker.addCost(c); }
+        if (e1 && e1.type === 'aborted') throw e1;
+        pass1Data = null; // Pass1失敗は1パスへフォールバック（安全側＝従来挙動）
+      }
+    }
+    const promptText = (useTwoPass && pass1Data)
+      ? NevPrompt.buildPass2Prompt(rule, state.businessType, pass1Data)
+      : NevPrompt.buildPrompt(rule, state.businessType);
+    const result = await NevGemini.callGeminiWithRetry(state.apiKey, input.images, promptText, state.model, info => { if (info && info.message) $('loadingText').textContent = `${rule.meta.drawingName}: ${info.message}`; }, { pass: useTwoPass && pass1Data ? 2 : 1, total: useTwoPass && pass1Data ? 2 : 1 }, { maxOutputTokens: rule.settings.maxOutputTokens, signal });
     const cost = NevCost.estimateCost(result._usageMetadata, result._model);
     if (cost) capTracker.addCost(cost);
+    if (useTwoPass && pass1Data) {
+      // Pass1が抽出の単一情報源（app.jsと同一ポリシー。echo由来の_disputedFieldsは削除=F-5）
+      result.detected_info = Object.assign({}, result.detected_info || {}, pass1Data);
+      delete result.detected_info._disputedFields;
+      result._twoPass = true;
+      if (root_colorsanity()) root_colorsanity().apply(result); // 色観測サニティ（fail→warnのみ）
+    }
 
     // グループ別集計（3-A: 結線は core/verdict.js の単一実装を使用）
     const groupAggs = NevVerdict.computeGroupAggs(rule, result, state.businessType);
     // FZ-1: ページ切り捨て(truncated)を戻り値に含め、結果表示で警告できるようにする
-    return { type, rule, groupAggs, detectedInfo: result.detected_info || {}, truncated: !!input.truncated };
+    return { type, rule, groupAggs, detectedInfo: result.detected_info || {}, truncated: !!input.truncated, twoPass: !!(useTwoPass && pass1Data), ts: new Date().toISOString(), fileName: file && file.name || '' };
   }
 
   // ── 実行 ──
@@ -172,12 +200,62 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (!errors.length) $('errorSection').innerHTML = `<div class="error-card"><p>チェック対象がありませんでした。</p></div>`;
   }
 
+  // 第2波: 案件まとめの記録パリティ — Excel出力（図面別＋図面間整合）
+  let lastDone = null;
+  $('batchExcelBtn').addEventListener('click', () => {
+    if (!lastDone || typeof XLSX === 'undefined') { alert('先にまとめチェックを実行してください。'); return; }
+    const STJP = { pass: '合格', warn: '要確認', fail: '不合格', na: '非該当' };
+    const wb = XLSX.utils.book_new();
+    // シート1: 案件サマリ＋図面間整合
+    const byType = {}; lastDone.forEach(d => { byType[d.type] = { detectedInfo: d.detectedInfo }; });
+    const findings = NevCrossCheck.crossCheck(byType);
+    const rowsS = [
+      ['NeV 案件まとめチェック 判定記録'],
+      ['判定日時', lastDone.length ? new Date(lastDone[0].ts).toLocaleString('ja-JP') : '', '事業区分', state.businessType === 'kiso' ? '基礎充電' : '目的地充電'],
+      ['注記', 'AIによる一次判定＋人手確認の記録。最終判断は目視確認済みが前提。人手確認の記録は個別チェック（単票）で実施。'],
+      [],
+      ['図面', 'ファイル', '読み取り方式', 'グループ', '総合判定', '必須合格', '重大不備'],
+    ];
+    lastDone.forEach(d => {
+      d.groupAggs.forEach(ga => {
+        rowsS.push([d.rule.meta.drawingName, d.fileName, d.twoPass ? '2段階' : '1回', ga.group === 'manual' ? '社内基準（参考）' : 'NeV要件', STJP[ga.agg.overall] || ga.agg.overall, `${ga.agg.requiredPass}/${ga.agg.requiredTotal}`, ga.agg.criticalFail || 0]);
+      });
+    });
+    rowsS.push([]);
+    rowsS.push(['図面間の整合性チェック']);
+    rowsS.push(['項目', '判定', '詳細', '各図面の値']);
+    findings.forEach(f => {
+      rowsS.push([f.label, STJP[f.status] || f.status, f.detail || '', f.values.map(v => `${v.label}:${v.raw != null && String(v.raw).trim() ? v.raw : '（未記載）'}`).join(' ／ ')]);
+    });
+    const wsS = XLSX.utils.aoa_to_sheet(rowsS);
+    wsS['!cols'] = [{ wch: 16 }, { wch: 28 }, { wch: 10 }, { wch: 18 }, { wch: 10 }, { wch: 10 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, wsS, '案件サマリ');
+    // シート2〜: 図面別明細
+    lastDone.forEach(d => {
+      const rows = [[`${d.rule.meta.drawingName}（${d.fileName}）`, d.twoPass ? '2段階読み取り' : '1回読み取り'], [],
+        ['グループ', '項目', '必須/任意', '判定', '検出内容', '詳細']];
+      d.groupAggs.forEach(ga => {
+        ga.agg.items.forEach(i => {
+          rows.push([ga.group === 'manual' ? '社内基準（参考）' : 'NeV要件', i.label || i.id, i.required ? '必須' : '任意', STJP[i.status] || i.status, i.found_text || '', i.detail || '']);
+        });
+      });
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [{ wch: 16 }, { wch: 34 }, { wch: 8 }, { wch: 8 }, { wch: 30 }, { wch: 50 }];
+      const nm = d.rule.meta.drawingName.replace(/[\\/:*?\[\]]/g, '').slice(0, 28);
+      XLSX.utils.book_append_sheet(wb, ws, nm || d.type);
+    });
+    const dt = new Date();
+    const stamp = `${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, '0')}${String(dt.getDate()).padStart(2, '0')}_${String(dt.getHours()).padStart(2, '0')}${String(dt.getMinutes()).padStart(2, '0')}`;
+    XLSX.writeFile(wb, `NeV案件まとめ判定_${stamp}.xlsx`);
+  });
+
   function statusPill(s) {
     const lbl = { pass: '合格', fail: '不合格', warn: '要確認', na: '非該当' }[s] || s;
     return `<span class="status-pill ${s}">${lbl}</span>`;
   }
 
   function renderResults(done) {
+    lastDone = done; // Excel出力（記録パリティ）用に保持
     // 図面間クロスチェック
     const byType = {}; done.forEach(d => { byType[d.type] = { detectedInfo: d.detectedInfo }; });
     const findings = NevCrossCheck.crossCheck(byType);

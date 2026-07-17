@@ -325,7 +325,12 @@ document.addEventListener('DOMContentLoaded', () => {
     $('cancelBtn').innerHTML = '&#10005; キャンセル';
     let canceled = false;
 
-    const rule = NevRules.getRule(state.drawingType);
+    const fullRule = NevRules.getRule(state.drawingType);
+    // 第2波: 絞り込み再チェック（fail/warnのみ等）。1回で消費し、次回は全項目に戻る
+    const recheckIds = state.recheckIds; state.recheckIds = null;
+    const rule = (recheckIds && recheckIds.length)
+      ? Object.assign({}, fullRule, { checks: fullRule.checks.filter(c => recheckIds.indexOf(c.id) >= 0) })
+      : fullRule;
     const runFileName = state.file ? state.file.name : ''; // クリック時点の判定対象を固定（差し替え時の誤表示防止）
     try {
       // 入力生成: ネイティブPDF優先、サイズ超過時は画像化にフォールバック。
@@ -470,9 +475,15 @@ document.addEventListener('DOMContentLoaded', () => {
         $('errorSection').innerHTML += `<div class="error-card" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;"><strong>⚠ 一部モデルが未実行</strong><p>${esc(runErrors.map(e => e.model + ': ' + e.message).join(' / '))}<br>成功した ${runs.length} 回分で判定しています（${state.precision === 'crossmodel' ? '2モデル一致の保守性が一部低下' : '多数決の票数が減少'}）。目視確認を強く推奨します。</p></div>`;
       }
       result._fileName = runFileName; // 結果がどのファイルの判定かを刻印（履歴にも保存される）
+      if (recheckIds && recheckIds.length) result._partialCheck = recheckIds.length;
       renderResult(rule, result, input, null);
-      // 波④-2: 判定完了時に履歴へ保存（直近10件・override状態は保存対象外）
-      pushHistory(rule, result);
+      // 波④-2: 判定完了時に履歴へ保存（部分チェックは保存しない＝全項目の記録と混ざらないように）
+      if (!result._partialCheck) {
+        state._historyId = pushHistory(rule, result);
+        state.ovMemos = {};
+      } else {
+        state._historyId = null;
+      }
     } catch (err) {
       showError(err);
     } finally {
@@ -498,6 +509,40 @@ document.addEventListener('DOMContentLoaded', () => {
   const STLABEL = { pass: '合格', fail: '不合格', warn: '要確認', na: '非該当' };
   // 人手オーバーライドを反映した実効ステータス
   function effStatus(idx, item) { return state.overrides[idx + ':' + item.id] || item.status; }
+  state.ovMemos = state.ovMemos || {};   // 人手確認の理由メモ（履歴に保存）
+  state.recheckIds = null;               // 絞り込み再チェックの対象id（1回で消費）
+  state._historyId = null;               // 直近runの履歴エントリid（人手確認の追記保存先）
+
+  // 第2波: 人手確認（override＋メモ）を履歴エントリへ追記保存（翌日持ち越し・監査記録）
+  function persistOverrides() {
+    if (!state._historyId) return;
+    try {
+      const arr = getHistory();
+      const e = arr.find(x => x.id === state._historyId);
+      if (!e) return;
+      e.overrides = Object.assign({}, state.overrides);
+      e.ovMemos = Object.assign({}, state.ovMemos);
+      saveHistoryArr(arr);
+    } catch (err) { /* 保存失敗は判定機能に影響させない */ }
+  }
+
+  // 第2波: 前回結果との差分（同一ファイル名・図面種別の直近履歴。部分チェックでは使わない）
+  function computePrevDiff(rule, result, excludeId) {
+    try {
+      if (result._partialCheck) return null;
+      const fn = result._fileName;
+      if (!fn) return null;
+      const prev = getHistory().find(e => e.id !== excludeId && e.drawingType === state.drawingType && e.fileName === fn && e.result);
+      if (!prev) return null;
+      const prevAggs = NevVerdict.computeGroupAggs(rule, prev.result, prev.businessType || state.businessType);
+      const map = {};
+      prevAggs.forEach(({ group, agg }) => {
+        map[group] = {};
+        agg.items.forEach(i => { map[group][i.id] = i.status; });
+      });
+      return { ts: prev.ts, map };
+    } catch (e) { return null; }
+  }
 
   // ── 結果描画 ──
   function renderResult(rule, result, input, cost) {
@@ -511,6 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
       `<div class="result-tab-content${i === 0 ? ' active' : ''}" id="tabContent${i}"><div class="overall-result" id="overall${i}"></div><div id="cats${i}"></div></div>`).join('');
     const backed = codeBackedIds(rule);
     lastRender = { rule, aggs, backed, result };
+    lastRender.prevDiff = computePrevDiff(rule, result, state._restoringEntryId || null);
 
     // タブ生成
     const tabs = $('resultTabs'); tabs.innerHTML = '';
@@ -523,6 +569,28 @@ document.addEventListener('DOMContentLoaded', () => {
       renderGroup(rule, g, agg, i, backed);
     });
     renderReviewSummary(aggs, result);
+    // 第2波: 差分サマリ（前回比）
+    if (lastRender.prevDiff) {
+      let solved = 0, newBad = 0, remain = 0;
+      const bad = s => s === 'fail' || s === 'warn';
+      aggs.forEach(({ group, agg }) => {
+        const pm = lastRender.prevDiff.map[group] || {};
+        agg.items.forEach(i => {
+          const prev = pm[i.id];
+          if (prev == null) return;
+          if (bad(prev) && !bad(i.status)) solved++;
+          else if (!bad(prev) && bad(i.status)) newBad++;
+          else if (bad(prev) && bad(i.status)) remain++;
+        });
+      });
+      let pts = lastRender.prevDiff.ts; try { pts = new Date(pts).toLocaleString('ja-JP'); } catch (e) { /* raw */ }
+      $('reviewSummary').insertAdjacentHTML('afterbegin',
+        `<div class="review-note" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534;">&#128200; 前回（${esc(pts)}・同名ファイル）比: 解消 ${solved} ／ 新規 ${newBad} ／ 未解消 ${remain}。各項目の「前回比」チップも参照（判定にAIの揺れが含まれる場合があります。差分ゼロ＝安全ではありません）。</div>`);
+    }
+    // 第2波: 部分チェック（絞り込み再実行）の明示
+    if (result._partialCheck) {
+      $('errorSection').innerHTML += `<div class="error-card" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;"><strong>&#128260; 部分チェック（${result._partialCheck}項目のみ再実行）</strong><p>選択した項目だけを再チェックした参考結果です。<b>総合判定は全項目チェックの代わりになりません</b>。この結果は履歴に保存されません。提出前には全項目チェックを実行してください。</p></div>`;
+    }
     // 使わないタブを隠す
     switchResultTab(0);
 
@@ -577,7 +645,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const catIds = Object.keys(agg.categoryResults).sort((a, b) => ((cats[a] || {}).order || 0) - ((cats[b] || {}).order || 0));
     const html = catIds.map(cid => {
       const cat = agg.categoryResults[cid];
-      const items = cat.items.map(it => renderCheckItem(it, idx, backed && backed.has(it.id))).join('');
+      const items = cat.items.map(it => renderCheckItem(it, idx, backed && backed.has(it.id), group)).join('');
       return `<div class="cat-block"><h4 class="cat-title">${esc((cats[cid] || {}).title || cid)}</h4>${items}</div>`;
     }).join('');
     $('cats' + idx).innerHTML = html;
@@ -607,23 +675,44 @@ document.addEventListener('DOMContentLoaded', () => {
     el.textContent = `${nOv ? '確認済み判定' : 'AI判定'}: ${label} ／ 合格 ${totalPass}/${items.length}（必須 ${reqPass}/${req.length}${totalNa ? ' ・非該当' + totalNa : ''}）` + (nOv ? ` ／ 人手調整${nOv}項目` : '');
   }
 
-  function renderCheckItem(item, idx, isBacked) {
+  // 出典表示: nev群=手引き5-9-N（図面種別から導出）/ manual群=社内基準。item.src で個別上書き可
+  const SRC_59 = { mitori: '手引き5-9-1', heimen: '手引き5-9-2', haisen: '手引き5-9-3', keitou: '手引き5-9-4' };
+  function srcLabelFor(item, groupName) {
+    if (item.src) return item.src;
+    if (groupName === 'manual') return '社内基準';
+    return SRC_59[state.drawingType] || '手引き5-9';
+  }
+  function renderCheckItem(item, idx, isBacked, groupName) {
     const eff = effStatus(idx, item);
     const overridden = !!state.overrides[idx + ':' + item.id];
     const badge = isBacked ? '<span class="src-badge code">コード検算</span>' : '<span class="src-badge ai">AI判定</span>';
     const confBadge = item.confidence === 'low' ? '<span class="src-badge low">確信度低</span>' : '';
+    // 第1波: 出典（何に基づく判定か）を項目単位で明示 — 「AIがそう言った」→「手引きがそう言っている」
+    const srcBadge = `<span class="src-badge" style="background:#eef2ff;color:#3730a3;" title="この項目の判定根拠">出典:${esc(srcLabelFor(item, groupName))}</span>`;
+    // 第2波: 前回結果との差分チップ（同一ファイル・同一種別の直近履歴と比較）
+    let diffChip = '';
+    const pd = lastRender && lastRender.prevDiff;
+    if (pd && pd.map[groupName]) {
+      const prev = pd.map[groupName][item.id];
+      const bad = s => s === 'fail' || s === 'warn';
+      if (prev != null) {
+        if (bad(prev) && !bad(item.status)) diffChip = '<span class="src-badge" style="background:#dcfce7;color:#166534;">前回比:解消</span>';
+        else if (!bad(prev) && bad(item.status)) diffChip = '<span class="src-badge" style="background:#fee2e2;color:#991b1b;">前回比:新規</span>';
+        else if (bad(prev) && bad(item.status)) diffChip = '<span class="src-badge" style="background:#fef3c7;color:#92400e;">前回比:未解消</span>';
+      }
+    }
     const opts = ['pass', 'warn', 'fail', 'na'].map(s => `<option value="${s}"${eff === s && overridden ? ' selected' : ''}>${STLABEL[s]}</option>`).join('');
     return `<div class="check-item${overridden ? ' overridden' : ''}">
       <span class="status-pill ${eff}">${STLABEL[eff] || eff}</span>
       <div class="check-main">
-        <div class="c-label">${esc(item.label)}${item.required ? '' : '<span class="opt-tag">任意</span>'} ${badge}${confBadge}${overridden ? '<span class="src-badge human">人手</span>' : ''}</div>
+        <div class="c-label">${esc(item.label)}${item.required ? '' : '<span class="opt-tag">任意</span>'} ${badge}${confBadge}${srcBadge}${diffChip}${overridden ? '<span class="src-badge human">人手</span>' : ''}</div>
         ${item.found_text ? `<div class="c-found">検出: ${esc(item.found_text)}</div>` : '<div class="c-found" style="color:var(--fail)">※読み取り内容なし</div>'}
         ${item.detail ? `<div class="c-detail">${esc(item.detail)}</div>` : ''}
         <div class="c-override">確認/修正:
           <select class="ov-select" data-k="${idx}:${item.id}">
             <option value=""${overridden ? '' : ' selected'}>${item.original_status ? `自動降格のまま（AI判定${STLABEL[item.original_status] || item.original_status}→${STLABEL[item.status] || item.status}）` : `AIのまま（${STLABEL[item.status] || item.status}）`}</option>
             ${opts}
-          </select></div>
+          </select>${overridden ? `<input type="text" class="ov-memo" data-k="${idx}:${item.id}" placeholder="確認/却下理由メモ（任意・履歴に保存）" value="${esc(state.ovMemos[idx + ':' + item.id] || '')}" style="margin-left:8px;width:280px;font-size:12px;padding:2px 6px;border:1px solid var(--line);border-radius:4px;">` : ''}</div>
       </div></div>`;
   }
 
@@ -686,6 +775,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!g) return; // FA-F: 防御（結果未描画時のchangeイベントで例外にしない）
     renderGroup(lastRender.rule, g.group, g.agg, idx, lastRender.backed);
     renderReviewSummary(lastRender.aggs, lastRender.result || {});
+    persistOverrides(); // 第2波: 人手確認を履歴へ即時保存（翌日持ち越し）
+  });
+  // 第2波: 理由メモの入力（override時に表示される .ov-memo）
+  $('resultSection').addEventListener('input', e => {
+    const inp = e.target.closest('.ov-memo'); if (!inp) return;
+    const k = inp.dataset.k;
+    if (inp.value) state.ovMemos[k] = inp.value; else delete state.ovMemos[k];
+    persistOverrides();
   });
 
   function switchResultTab(i) {
@@ -743,6 +840,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let txt = `=== NeV ${rule.meta.drawingName} 判定結果（${state.businessType === 'kiso' ? '基礎充電' : '目的地充電'}）===\n`;
     txt += `判定日時: ${judgedStr} ／ 判定モード: ${precLabel}\n`;
     if (lastRender.restoredTs) txt += `※履歴からの再表示を出力しています（エクスポート日時: ${new Date().toLocaleString('ja-JP')}）\n`;
+    if (result && result._partialCheck) txt += `※部分チェック（${result._partialCheck}項目のみ再実行）: 全項目チェックの代わりになりません。\n`;
     const runErrsCp = (result && result._runErrors) || [];
     if (runErrsCp.length) txt += `※部分結果: 一部が未実行（${runErrsCp.map(e => (e.model || '') + ': ' + (e.message || '')).join(' / ')}）。目視確認を強く推奨。\n`;
     txt += `※AI一次判定＋人手確認。最終判断は目視確認済み前提。\n\n`;
@@ -762,7 +860,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const eff = effStatus(idx, it);
         const ov = state.overrides[idx + ':' + it.id];
         const m = { pass: '[OK]', fail: '[NG]', warn: '[!?]', na: '[--]' }[eff] || '[?]';
-        txt += `${m} ${it.label}${it.required ? '' : ' [任意]'}${ov ? '（人手: AI=' + (it.status) + '→' + eff + '）' : ''}\n`;
+        txt += `${m} ${it.label}${it.required ? '' : ' [任意]'}${ov ? '（人手: AI=' + (it.status) + '→' + eff + '）' : ''}${state.ovMemos[idx + ':' + it.id] ? '（メモ: ' + state.ovMemos[idx + ':' + it.id] + '）' : ''}\n`;
         if (it.found_text) txt += `    検出: ${it.found_text}\n`;
         if (it.detail) txt += `    ${it.detail}\n`;
       });
@@ -792,7 +890,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // CDN読込失敗時（オフライン・CDN障害）はボタンを無効化し説明を表示（機能自体は判定に必須でない）。
   if (typeof XLSX === 'undefined') {
     $('excelBtn').disabled = true;
-    $('excelBtn').title = 'Excel出力ライブラリ（CDN）の読み込みに失敗したため利用できません';
+    $('excelBtn').title = 'Excel出力ライブラリの読み込みに失敗したため利用できません（ページを再読み込みしてください）';
     $('excelNote').style.display = 'block';
   }
   $('excelBtn').addEventListener('click', () => {
@@ -815,7 +913,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ...(lastRender.restoredTs ? [['注記', `履歴からの再表示を出力（エクスポート日時: ${new Date().toLocaleString('ja-JP')}）`]] : []),
       ...(runErrsXl.length ? [['注記', `部分結果: 一部が未実行（${runErrsXl.map(e => (e.model || '') + ': ' + (e.message || '')).join(' / ')}）。目視確認を強く推奨。`]] : []),
       [],
-      ['グループ', 'カテゴリ', '項目', '必須/任意', '判定（実効）', 'AI判定', '人手調整', '検出内容', '詳細'],
+      ['グループ', 'カテゴリ', '項目', '必須/任意', '判定（実効）', 'AI判定', '人手調整', '人手メモ', '検出内容', '詳細'],
     ];
     aggs.forEach(({ group: g, agg }, idx) => {
       const req = agg.items.filter(i => i.required && effStatus(idx, i) !== 'na');
@@ -823,7 +921,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const reqWarn = req.filter(i => effStatus(idx, i) === 'warn').length;
       const critFail = agg.items.filter(i => i.critical && i.required && effStatus(idx, i) === 'fail').length;
       const overall = NevAggregate.decideOverall({ requiredFail: reqFail, requiredWarn: reqWarn, criticalFail: critFail, requiredFailForWarn: rule.settings.requiredFailForWarn });
-      rows1.push([groupLabelX[g] || g, '', '【総合判定】', '', STJP[overall] || overall, '', '',
+      rows1.push([groupLabelX[g] || g, '', '【総合判定】', '', STJP[overall] || overall, '', '', '',
         `合格 ${agg.items.filter(i => effStatus(idx, i) === 'pass').length}/${agg.items.length} 項目（必須 ${req.filter(i => effStatus(idx, i) === 'pass').length}/${req.length}）`, '']);
       agg.items.forEach(it => {
         const eff = effStatus(idx, it);
@@ -836,6 +934,7 @@ document.addEventListener('DOMContentLoaded', () => {
           STJP[eff] || eff,
           STJP[it.status] || it.status,
           ov ? `あり（AI:${STJP[it.status] || it.status}→${STJP[eff] || eff}）` : '',
+          state.ovMemos[idx + ':' + it.id] || '',
           it.found_text || '',
           it.detail || '',
         ]);
@@ -933,6 +1032,7 @@ document.addEventListener('DOMContentLoaded', () => {
       arr.unshift(entry);
       saveHistoryArr(arr.slice(0, HISTORY_MAX));
       renderHistoryList();
+      return entry.id;
     } catch (e) { /* 履歴保存の失敗は判定機能に影響させない */ }
   }
   function renderHistoryList() {
@@ -968,8 +1068,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     selectDrawing(entry.drawingType);
     $('errorSection').innerHTML = '';
+    state._restoringEntryId = entry.id; // 差分比較で自分自身と比較しないため
     renderResult(rule, entry.result, null, null);
+    state._restoringEntryId = null;
     if (lastRender) lastRender.restoredTs = entry.ts; // エクスポートに判定時刻・再表示注記を伝える（S3-3）
+    // 第2波: 保存済みの人手確認（override＋メモ）を復元し、続きから編集可能にする
+    state.overrides = Object.assign({}, entry.overrides || {});
+    state.ovMemos = Object.assign({}, entry.ovMemos || {});
+    state._historyId = entry.id;
+    if (lastRender) {
+      lastRender.aggs.forEach((g, i) => renderGroup(rule, g.group, g.agg, i, lastRender.backed));
+      renderReviewSummary(lastRender.aggs, lastRender.result || {});
+    }
     // S3-2: 当時の「部分結果」警告を再表示（保存済みの _runErrors を使う。出さないと完全な結果に見える＝誤安心）
     const rErrsH = Array.isArray(entry.result._runErrors) ? entry.result._runErrors : [];
     const plannedH = Array.isArray(entry.result._models) ? entry.result._models.length : null;
@@ -977,12 +1087,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (rErrsH.length || (plannedH && ranH != null && ranH < plannedH)) {
       $('errorSection').innerHTML += `<div class="error-card" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;"><strong>⚠ この判定は部分結果です${plannedH ? `（実行${ranH != null ? ranH : '?'}/${plannedH}回）` : ''}</strong><p>${esc(rErrsH.map(er => (er.model || '') + ': ' + (er.message || '')).join(' / ') || 'キャンセルまたはエラーにより一部が未実行のまま保存された判定です。')}<br>目視確認を強く推奨します。</p></div>`;
     }
-    // 読み取り専用化: 人手オーバーライドのセレクトを無効化＋履歴表示バナー
-    document.querySelectorAll('#resultSection .ov-select').forEach(s => { s.disabled = true; });
     let ts = entry.ts; try { ts = new Date(entry.ts).toLocaleString('ja-JP'); } catch (er) { /* keep raw */ }
-    $('resultTypeLabel').textContent += ' ／ 履歴表示（読み取り専用）';
+    $('resultTypeLabel').textContent += ' ／ 履歴表示';
     $('reviewSummary').insertAdjacentHTML('afterbegin',
-      `<div class="review-note" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;">&#128337; ${esc(ts)} の判定結果を履歴から再表示しています（読み取り専用）。当時の人手調整（上書き）は保存対象外のため反映されません。設定（図面種別・事業区分・精度モード）も当時の値に切り替えているため、次回の実行前にご確認ください。新しい判定を実行すると通常表示に戻ります。</div>`);
+      `<div class="review-note" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;">&#128337; ${esc(ts)} の判定結果を履歴から再表示しています。人手確認（プルダウン・メモ）はこの履歴に保存され、続きから編集できます。設定（図面種別・事業区分・精度モード）も当時の値に切り替えているため、次回の実行前にご確認ください。</div>`);
   }
   $('historyToggle').addEventListener('click', e => {
     e.preventDefault();
@@ -1001,6 +1109,69 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = e.target.closest('.history-item'); if (!btn) return;
     const entry = getHistory().find(x => x.id === btn.dataset.hid);
     if (entry) restoreHistory(entry);
+  });
+
+  // 第2波: 不合格・要確認のみ再チェック（部分チェック・履歴保存なし）
+  $('recheckFailBtn').addEventListener('click', () => {
+    if (!lastRender) { alert('先にチェックを実行してください。'); return; }
+    if (lastRender.result && lastRender.result._partialCheck) { alert('部分チェックの結果からは再絞り込みできません。全項目チェックを実行してください。'); return; }
+    const ids = [];
+    lastRender.aggs.forEach(({ agg }, idx) => {
+      agg.items.forEach(i => { const eff = effStatus(idx, i); if (eff === 'fail' || eff === 'warn') ids.push(i.id); });
+    });
+    if (!ids.length) { alert('不合格・要確認の項目はありません。'); return; }
+    if (!confirm(`不合格・要確認の ${ids.length} 項目のみ再チェックします（部分チェック・履歴保存なし）。実行しますか？`)) return;
+    state.recheckIds = ids;
+    runCheck();
+  });
+
+  // 第2波: 修正指示書（不合格・要確認のみ抽出・CAD担当/外注へ渡す様式）
+  $('fixSheetBtn').addEventListener('click', () => {
+    if (!lastRender || typeof XLSX === 'undefined') { alert('先にチェックを実行してください。'); return; }
+    const { rule, aggs, result } = lastRender;
+    const STJP = { pass: '合格', warn: '要確認', fail: '不合格', na: '非該当' };
+    const cats = rule.categories || {};
+    const rows = [
+      ['NeV図面 修正指示書（AI一次チェック＋人手確認に基づく）'],
+      ['図面種別', rule.meta.drawingName, 'ファイル', (result && result._fileName) || '', '作成日時', new Date().toLocaleString('ja-JP')],
+      ['注記', 'AIの指摘には誤りがあり得ます。修正前に必ず原図面と突き合わせてください。人手確認済みの項目（メモ欄参照）を優先してください。'],
+      [],
+      ['No', 'グループ', 'カテゴリ', '項目', '判定', 'ページ・位置', '検出内容', '判定理由', '要件（直すべき内容）', '出典', '人手確認メモ', '修正者記入欄'],
+    ];
+    let no = 0;
+    const checkById = {};
+    (rule.checks || []).forEach(c => { checkById[c.id] = c; });
+    aggs.forEach(({ group: g, agg }, idx) => {
+      agg.items.forEach(it => {
+        const eff = effStatus(idx, it);
+        if (eff !== 'fail' && eff !== 'warn') return;
+        no++;
+        const posM = String(it.detail || '').match(/P\d+[^。、]{0,24}/);
+        const def = checkById[it.id] || {};
+        rows.push([
+          no,
+          g === 'manual' ? '社内基準（参考）' : 'NeV要件',
+          (cats[it.category] || {}).title || it.category || '',
+          it.label || it.id,
+          STJP[eff] || eff,
+          posM ? posM[0] : '',
+          it.found_text || '',
+          it.detail || '',
+          def.description || '',
+          srcLabelFor(it, g),
+          state.ovMemos[idx + ':' + it.id] || '',
+          '',
+        ]);
+      });
+    });
+    if (no === 0) { alert('不合格・要確認の項目はありません（修正指示書の対象なし）。'); return; }
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 4 }, { wch: 14 }, { wch: 14 }, { wch: 32 }, { wch: 8 }, { wch: 18 }, { wch: 28 }, { wch: 40 }, { wch: 40 }, { wch: 12 }, { wch: 24 }, { wch: 24 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '修正指示書');
+    const dt = new Date();
+    const stamp = `${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, '0')}${String(dt.getDate()).padStart(2, '0')}_${String(dt.getHours()).padStart(2, '0')}${String(dt.getMinutes()).padStart(2, '0')}`;
+    XLSX.writeFile(wb, `NeV修正指示書_${rule.meta.drawingName}_${stamp}.xlsx`);
   });
 
   // ── 起動 ──
