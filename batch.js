@@ -106,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
           { maxOutputTokens: rule.settings.maxOutputTokens, signal });
         const c1 = NevCost.estimateCost(p1._usageMetadata, p1._model);
         if (c1) capTracker.addCost(c1);
-        pass1Data = p1.detected_info || null;
+        pass1Data = (p1 && p1.detected_info && typeof p1.detected_info === 'object' && !Array.isArray(p1.detected_info)) ? p1.detected_info : null; // C-1: 型崩れPass1を採用しない
       } catch (e1) {
         if (e1 && e1.usageMetadata) { const c = NevCost.estimateCost(e1.usageMetadata, state.model); if (c) capTracker.addCost(c); }
         if (e1 && e1.type === 'aborted') throw e1;
@@ -130,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // グループ別集計（3-A: 結線は core/verdict.js の単一実装を使用）
     const groupAggs = NevVerdict.computeGroupAggs(rule, result, state.businessType);
     // FZ-1: ページ切り捨て(truncated)を戻り値に含め、結果表示で警告できるようにする
-    return { type, rule, groupAggs, detectedInfo: result.detected_info || {}, truncated: !!input.truncated, twoPass: !!(useTwoPass && pass1Data), ts: new Date().toISOString(), fileName: file && file.name || '' };
+    return { type, rule, groupAggs, detectedInfo: result.detected_info || {}, truncated: !!input.truncated, twoPass: !!(useTwoPass && pass1Data), twoPassDegraded: !!(useTwoPass && !pass1Data), ts: new Date().toISOString(), fileName: file && file.name || '' };
   }
 
   // ── 実行 ──
@@ -196,14 +196,16 @@ document.addEventListener('DOMContentLoaded', () => {
       $('errorSection').innerHTML = `<div class="error-card"><strong>一部の図面でエラー（他は結果を表示します）</strong>` +
         errors.map(e => `<p>${esc(NevRules.getRule(e.type).meta.drawingName)}: ${esc(e.message)}</p>`).join('') + `</div>`;
     }
-    if (done.length) renderResults(done);
+    if (done.length) renderResults(done, errors);
     else if (!errors.length) $('errorSection').innerHTML = `<div class="error-card"><p>チェック対象がありませんでした。</p></div>`;
   }
 
   // 第2波: 案件まとめの記録パリティ — Excel出力（図面別＋図面間整合）
   let lastDone = null;
+  let lastRunErrors = []; // R-1: エラー・キャンセル・未実行の図面もExcel記録に含める
   $('batchExcelBtn').addEventListener('click', () => {
-    if (!lastDone || typeof XLSX === 'undefined') { alert('先にまとめチェックを実行してください。'); return; }
+    if (typeof XLSX === 'undefined') { alert('Excel出力ライブラリが読み込まれていません。ページを再読み込みしてください。'); return; }
+    if (!lastDone) { alert('先にまとめチェックを実行してください。'); return; }
     const STJP = { pass: '合格', warn: '要確認', fail: '不合格', na: '非該当' };
     const wb = XLSX.utils.book_new();
     // シート1: 案件サマリ＋図面間整合
@@ -221,8 +223,17 @@ document.addEventListener('DOMContentLoaded', () => {
         rowsS.push([d.rule.meta.drawingName, d.fileName, d.twoPass ? '2段階' : '1回', ga.group === 'manual' ? '社内基準（参考）' : 'NeV要件', STJP[ga.agg.overall] || ga.agg.overall, `${ga.agg.requiredPass}/${ga.agg.requiredTotal}`, ga.agg.criticalFail || 0]);
       });
     });
+    // R-1: エラー・キャンセル・未実行の図面を「未判定」として明記（無言欠落＝記録の虚偽を防ぐ）
+    lastRunErrors.forEach(er => {
+      const nm = (NevRules.getRule(er.type) || { meta: { drawingName: er.type } }).meta.drawingName;
+      rowsS.push([nm, '', '—', '未判定', '未判定', '—', '—']);
+      rowsS.push(['', '', '', '理由', er.message || '', '', '']);
+    });
+    if (lastRunErrors.length) {
+      rowsS.push(['注記', `⚠ ${lastRunErrors.length}件の図面が未判定です。この記録は案件全図面の判定ではありません。`]);
+    }
     rowsS.push([]);
-    rowsS.push(['図面間の整合性チェック']);
+    rowsS.push(['図面間の整合性チェック' + (lastRunErrors.length ? '（判定済みの図面のみで実施＝未判定図面は含まれていません）' : '')]);
     rowsS.push(['項目', '判定', '詳細', '各図面の値']);
     findings.forEach(f => {
       rowsS.push([f.label, STJP[f.status] || f.status, f.detail || '', f.values.map(v => `${v.label}:${v.raw != null && String(v.raw).trim() ? v.raw : '（未記載）'}`).join(' ／ ')]);
@@ -254,8 +265,9 @@ document.addEventListener('DOMContentLoaded', () => {
     return `<span class="status-pill ${s}">${lbl}</span>`;
   }
 
-  function renderResults(done) {
+  function renderResults(done, runErrors) {
     lastDone = done; // Excel出力（記録パリティ）用に保持
+    lastRunErrors = Array.isArray(runErrors) ? runErrors : [];
     // 図面間クロスチェック
     const byType = {}; done.forEach(d => { byType[d.type] = { detectedInfo: d.detectedInfo }; });
     const findings = NevCrossCheck.crossCheck(byType);
@@ -291,6 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
         + chip(all.filter(i => /根拠未提示/.test(i.detail || '')).length, '根拠未提示')
         + chip(all.filter(i => /自動検算未実施|自動検算保留/.test(i.detail || '')).length, '自動検算なし');
       // FZ-1: ページ切り捨て警告（app.jsと同等の安全表示）
+      const degraded = d.twoPassDegraded ? '<div class="c-detail" style="color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:4px 8px;margin:4px 0;">⚠ 2段階読み取りの抽出パスに失敗したため、この図面は1回読み（簡易）で判定しています。個別チェックでの再実行を推奨します。</div>' : '';
       const trunc = d.truncated ? '<div class="c-detail" style="color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:4px 8px;margin:4px 0;">⚠ 一部ページ未読み込み：PDFが大きく一部ページを解析できていません。未読ページは判定に含まれません。必ず目視確認してください。</div>' : '';
       // 明細（fail/warn/必須na のみ展開表示。全passでも件数を明示）
       const attention = all.filter(i => i.status === 'fail' || i.status === 'warn' || (i.required && i.status === 'na'));
@@ -301,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : '<div class="c-found" style="color:var(--pass,#2c7a52);">指摘なし（それでも最終目視を推奨）</div>';
       const di = d.detectedInfo;
       const info = [di.facility_name && `施設:${di.facility_name}`, di.charging_count && `台数:${di.charging_count}`, di.creator && `作成:${di.creator}`].filter(Boolean).join(' / ');
-      return `<div class="cat-block"><h4 class="cat-title">${esc(d.rule.meta.drawingName)}</h4><div style="margin-bottom:4px;">${groups}</div>${trunc}<div style="margin:4px 0;">${chips}</div><div class="c-found">${esc(info)}</div>${details}</div>`;
+      return `<div class="cat-block"><h4 class="cat-title">${esc(d.rule.meta.drawingName)}</h4><div style="margin-bottom:4px;">${groups}</div>${degraded}${trunc}<div style="margin:4px 0;">${chips}</div><div class="c-found">${esc(info)}</div>${details}</div>`;
     }).join('') + '<p class="card-description" style="margin-top:8px;">※本結果はAI一次チェックです。合否の最終判断は必ず個別チェック（トップページ）での根拠確認と目視で行ってください。</p>';
 
     renderCostBar($('costBarResult'));

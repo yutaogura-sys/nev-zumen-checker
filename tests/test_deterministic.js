@@ -44,6 +44,10 @@ eq('デマンド必要 & pass → passのまま', det.registry.demand_rated_coun
 // 主幹150AT(定格5) ≥ 設置3台 → 不要。failなら na へ緩和
 eq('デマンド不要 & fail → na緩和', det.registry.demand_rated_count({ main_breaker_at: 150, charger_count: 3 }, { currentStatus: 'fail' }).status, 'na');
 // ①【LB/同時運転台数】8台設置でもLBで同時2台なら、定格内 → na（正しいnaをfailにしない）
+// A-1/A-2（エラー出し第3R）: 緩めは「総台数が読めて、かつ同時稼働の記載が無い」場合のみ
+ok(det.registry.demand_rated_count({ main_breaker_at: 100, simultaneous_count: 2 }, { currentStatus: 'fail' }).unfired === true, 'A-1: 総台数未読取＋simulのみ → fail→na緩めをしない（検算不能注記）');
+ok(det.registry.demand_rated_count({ main_breaker_at: 125, charger_count: 4, simultaneous_count: 4 }, { currentStatus: 'fail' }).unfired === true, 'A-2: simul===total でも記載あり＝形跡あり → 緩めない');
+ok(det.registry.main_at_per_count({ main_breaker_at: 250, simultaneous_count: 2 }, {}).unfired === true && /確定検算はできません/.test(det.registry.main_at_per_count({ main_breaker_at: 250, simultaneous_count: 2 }, {}).detail), 'A-3: simulのみでは「充足」参考注記を出さない');
 // R7補正基準（2026-07-13変更）: 容量評価は常に総設置台数。LB/デマンドは容量の代替にならない
 eq('R7h: 125AT(定格4) 総8台/同時2台 → LBでも容量不足の可能性warn', det.registry.demand_rated_count({ main_breaker_at: 125, charger_count: 8, simultaneous_count: 2 }, { currentStatus: 'na' }).status, 'warn');
 eq('R7h: 100AT(定格3) 総8台/同時2台 & fail → LBを理由に緩めない(fail維持)', det.registry.demand_rated_count({ main_breaker_at: 100, charger_count: 8, simultaneous_count: 2 }, { currentStatus: 'fail' }).status, 'fail');

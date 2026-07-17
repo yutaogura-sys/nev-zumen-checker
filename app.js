@@ -309,6 +309,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   async function runCheck() {
+    // B-2: 絞り込み指定は最初に消費（実行中・上限confirmキャンセル等の早期returnで残留すると、
+    // 次の「全項目チェック」が黙って部分実行になるため）
+    const recheckIds = state.recheckIds; state.recheckIds = null;
     if (running) return; // 二重実行防止（並走すると二重課金・キャンセル不能化・結果の相互上書きが起きる）
     // 上限超過時は実行前に確認
     const st = capTracker.getState();
@@ -326,8 +329,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let canceled = false;
 
     const fullRule = NevRules.getRule(state.drawingType);
-    // 第2波: 絞り込み再チェック（fail/warnのみ等）。1回で消費し、次回は全項目に戻る
-    const recheckIds = state.recheckIds; state.recheckIds = null;
     const rule = (recheckIds && recheckIds.length)
       ? Object.assign({}, fullRule, { checks: fullRule.checks.filter(c => recheckIds.indexOf(c.id) >= 0) })
       : fullRule;
@@ -475,6 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('errorSection').innerHTML += `<div class="error-card" style="background:#fef3c7;border-color:#fcd34d;color:#92400e;"><strong>⚠ 一部モデルが未実行</strong><p>${esc(runErrors.map(e => e.model + ': ' + e.message).join(' / '))}<br>成功した ${runs.length} 回分で判定しています（${state.precision === 'crossmodel' ? '2モデル一致の保守性が一部低下' : '多数決の票数が減少'}）。目視確認を強く推奨します。</p></div>`;
       }
       result._fileName = runFileName; // 結果がどのファイルの判定かを刻印（履歴にも保存される）
+      result._drawingType = state.drawingType; result._businessType = state.businessType; // 取り違えガード用の刻印
       if (recheckIds && recheckIds.length) result._partialCheck = recheckIds.length;
       renderResult(rule, result, input, null);
       // 波④-2: 判定完了時に履歴へ保存（部分チェックは保存しない＝全項目の記録と混ざらないように）
@@ -526,15 +528,33 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) { /* 保存失敗は判定機能に影響させない */ }
   }
 
+  // B-4: 保存済み結果に存在する項目だけにルールを絞る（ルール改定後に、当時無かった新項目が
+  // 「判定結果が取得できませんでした」の phantom fail として過去記録に混ざるのを防ぐ）
+  function ruleForStoredResult(rule, storedResult) {
+    try {
+      const present = new Set();
+      ['results', 'nev_results', 'manual_results'].forEach(k => {
+        (Array.isArray(storedResult && storedResult[k]) ? storedResult[k] : []).forEach(r => { if (r && r.id != null) present.add(r.id); });
+      });
+      if (!present.size) return rule;
+      const filtered = rule.checks.filter(c => present.has(c.id));
+      if (!filtered.length || filtered.length === rule.checks.length) return rule;
+      return Object.assign({}, rule, { checks: filtered });
+    } catch (e) { return rule; }
+  }
+
   // 第2波: 前回結果との差分（同一ファイル名・図面種別の直近履歴。部分チェックでは使わない）
   function computePrevDiff(rule, result, excludeId) {
     try {
       if (result._partialCheck) return null;
       const fn = result._fileName;
       if (!fn) return null;
-      const prev = getHistory().find(e => e.id !== excludeId && e.drawingType === state.drawingType && e.fileName === fn && e.result);
+      // B-3: 「前回」は自分より古いエントリに限定（古い履歴を復元したとき未来のrunと逆向き比較しない）
+      const curTs = result._ts || null;
+      const prev = getHistory().find(e => e.id !== excludeId && e.drawingType === state.drawingType && e.fileName === fn && e.result
+        && (!curTs || !e.ts || e.ts < curTs));
       if (!prev) return null;
-      const prevAggs = NevVerdict.computeGroupAggs(rule, prev.result, prev.businessType || state.businessType);
+      const prevAggs = NevVerdict.computeGroupAggs(ruleForStoredResult(rule, prev.result), prev.result, prev.businessType || state.businessType);
       const map = {};
       prevAggs.forEach(({ group, agg }) => {
         map[group] = {};
@@ -547,6 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── 結果描画 ──
   function renderResult(rule, result, input, cost) {
     state.overrides = {}; // 新しい判定ごとに人手上書きをリセット
+    state.ovMemos = {};   // メモも同時にリセット（復元時はrestoreHistoryが描画後に再適用する）
     const aggs = computeAggs(rule, result);
     const groups = aggs.map(a => a.group);
     // 4-D: manual群は社内基準＝NeV合否とは別（参考）であることをラベルで明示
@@ -555,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('tabContents').innerHTML = aggs.map((_, i) =>
       `<div class="result-tab-content${i === 0 ? ' active' : ''}" id="tabContent${i}"><div class="overall-result" id="overall${i}"></div><div id="cats${i}"></div></div>`).join('');
     const backed = codeBackedIds(rule);
-    lastRender = { rule, aggs, backed, result };
+    lastRender = { rule, aggs, backed, result, ruleType: state.drawingType };
     lastRender.prevDiff = computePrevDiff(rule, result, state._restoringEntryId || null);
 
     // タブ生成
@@ -569,24 +590,6 @@ document.addEventListener('DOMContentLoaded', () => {
       renderGroup(rule, g, agg, i, backed);
     });
     renderReviewSummary(aggs, result);
-    // 第2波: 差分サマリ（前回比）
-    if (lastRender.prevDiff) {
-      let solved = 0, newBad = 0, remain = 0;
-      const bad = s => s === 'fail' || s === 'warn';
-      aggs.forEach(({ group, agg }) => {
-        const pm = lastRender.prevDiff.map[group] || {};
-        agg.items.forEach(i => {
-          const prev = pm[i.id];
-          if (prev == null) return;
-          if (bad(prev) && !bad(i.status)) solved++;
-          else if (!bad(prev) && bad(i.status)) newBad++;
-          else if (bad(prev) && bad(i.status)) remain++;
-        });
-      });
-      let pts = lastRender.prevDiff.ts; try { pts = new Date(pts).toLocaleString('ja-JP'); } catch (e) { /* raw */ }
-      $('reviewSummary').insertAdjacentHTML('afterbegin',
-        `<div class="review-note" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534;">&#128200; 前回（${esc(pts)}・同名ファイル）比: 解消 ${solved} ／ 新規 ${newBad} ／ 未解消 ${remain}。各項目の「前回比」チップも参照（判定にAIの揺れが含まれる場合があります。差分ゼロ＝安全ではありません）。</div>`);
-    }
     // 第2波: 部分チェック（絞り込み再実行）の明示
     if (result._partialCheck) {
       $('errorSection').innerHTML += `<div class="error-card" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;"><strong>&#128260; 部分チェック（${result._partialCheck}項目のみ再実行）</strong><p>選択した項目だけを再チェックした参考結果です。<b>総合判定は全項目チェックの代わりになりません</b>。この結果は履歴に保存されません。提出前には全項目チェックを実行してください。</p></div>`;
@@ -680,7 +683,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function srcLabelFor(item, groupName) {
     if (item.src) return item.src;
     if (groupName === 'manual') return '社内基準';
-    return SRC_59[state.drawingType] || '手引き5-9';
+    const t = (lastRender && lastRender.ruleType) || state.drawingType; // B-8: タブ切替後の誤表示防止
+    return SRC_59[t] || '手引き5-9';
   }
   function renderCheckItem(item, idx, isBacked, groupName) {
     const eff = effStatus(idx, item);
@@ -720,6 +724,24 @@ document.addEventListener('DOMContentLoaded', () => {
   // ⑥ 人手オーバーライド後の実効ステータス(effStatus)で再集計し、人手確認済み項目は
   //    「重点確認」から外す（不合格/要確認の件数、および診断フラグの計上から除外）。
   function renderReviewSummary(aggs, result) {
+    // 第2波: 差分サマリ（前回比）。ここで生成することで、人手確認・履歴復元による再描画でも消えない
+    let diffNote = '';
+    if (lastRender && lastRender.prevDiff) {
+      let solved = 0, newBad = 0, remain = 0;
+      const bad = s => s === 'fail' || s === 'warn';
+      aggs.forEach(({ group, agg }) => {
+        const pm = lastRender.prevDiff.map[group] || {};
+        agg.items.forEach(i => {
+          const prev = pm[i.id];
+          if (prev == null) return;
+          if (bad(prev) && !bad(i.status)) solved++;
+          else if (!bad(prev) && bad(i.status)) newBad++;
+          else if (bad(prev) && bad(i.status)) remain++;
+        });
+      });
+      let pts = lastRender.prevDiff.ts; try { pts = new Date(pts).toLocaleString('ja-JP'); } catch (e) { /* raw */ }
+      diffNote = `<div class="review-note" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534;">&#128200; 前回（${esc(pts)}・同名ファイル）比: 解消 ${solved} ／ 新規 ${newBad} ／ 未解消 ${remain}。各項目の「前回比」チップも参照（判定にAIの揺れが含まれる場合があります。差分ゼロ＝安全ではありません）。</div>`;
+    }
     let cFail = 0, cWarn = 0, cLow = 0, cNote = 0, cNoEvidence = 0, cReqNa = 0;
     const overriddenIds = new Set();
     aggs.forEach(({ agg }, idx) => {
@@ -754,7 +776,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const focus = (cFail + cWarn + cLow + dis + cNote + cNoEvidence + cReqNa) === 0
       ? '<span style="color:var(--pass)">重点確認項目なし（全項目に根拠あり・確信度良好）。それでも最終目視を推奨。</span>'
       : (cReqNa ? `必須項目のうち ${cReqNa} 件が「非該当」と判定され合否計算から除外されています。本当に非該当か必ず確認してください。 ` : '') + '上記の項目を重点的に目視確認してください。';
-    $('reviewSummary').innerHTML = `<div class="review-summary">
+    $('reviewSummary').innerHTML = diffNote + `<div class="review-summary">
       <div><strong>&#128269; 重点確認サマリ</strong>（判定モード: ${esc(modeTxt)}）</div>
       <div class="chips">${chips.join('') || '<span class="chip pass">指摘なし</span>'}</div>
       <div class="focus-note">${focus}</div></div>`;
@@ -769,7 +791,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ⑦ AIの元判定と同じ値を選び直した場合は「人手調整」とみなさない（監査カウントの水増し防止）。
     const aiItem = lastRender && lastRender.aggs[idx] && lastRender.aggs[idx].agg.items.find(it => it.id === id);
     const aiStatus = aiItem ? aiItem.status : null;
-    if (v && v !== aiStatus) state.overrides[k] = v; else delete state.overrides[k];
+    if (v && v !== aiStatus) state.overrides[k] = v; else { delete state.overrides[k]; delete state.ovMemos[k]; } // C-2: 解除時はメモも消す
     // 対象項目の行を再描画（pill/バッジ更新）＋総合再計算＋サマリ更新
     const g = lastRender && lastRender.aggs[idx];
     if (!g) return; // FA-F: 防御（結果未描画時のchangeイベントで例外にしない）
@@ -899,7 +921,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const STJP = { pass: '合格', warn: '要確認', fail: '不合格', na: '非該当' };
     const groupLabelX = { nev: 'NeV要件判定', manual: '作図センター基準（参考・NeV合否と別）' };
     const cats = rule.categories || {};
-    const precLabel = precisionLabelFor(result);
+    const precLabel = precisionLabelFor(result) + ((result && result._partialCheck) ? `・部分チェック(${result._partialCheck}項目のみ)` : '');
     const judgedIso = (result && result._ts) || lastRender.restoredTs || null;
     const judgedStr = judgedIso ? new Date(judgedIso).toLocaleString('ja-JP') : new Date().toLocaleString('ja-JP');
     const runErrsXl = (result && result._runErrors) || [];
@@ -912,6 +934,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ['注記', 'AIによる一次判定＋人手確認の記録です。最終判断は目視確認済みが前提です。'],
       ...(lastRender.restoredTs ? [['注記', `履歴からの再表示を出力（エクスポート日時: ${new Date().toLocaleString('ja-JP')}）`]] : []),
       ...(runErrsXl.length ? [['注記', `部分結果: 一部が未実行（${runErrsXl.map(e => (e.model || '') + ': ' + (e.message || '')).join(' / ')}）。目視確認を強く推奨。`]] : []),
+      ...((result && result._partialCheck) ? [['注記', `⚠ 部分チェック（${result._partialCheck}項目のみ再実行）: この記録は全項目チェックの代わりになりません。提出前には全項目チェックを実行してください。`]] : []),
       [],
       ['グループ', 'カテゴリ', '項目', '必須/任意', '判定（実効）', 'AI判定', '人手調整', '人手メモ', '検出内容', '詳細'],
     ];
@@ -954,7 +977,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const wb = XLSX.utils.book_new();
     const ws1 = XLSX.utils.aoa_to_sheet(rows1);
-    ws1['!cols'] = [{ wch: 22 }, { wch: 24 }, { wch: 32 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 22 }, { wch: 40 }, { wch: 60 }];
+    ws1['!cols'] = [{ wch: 22 }, { wch: 24 }, { wch: 32 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 22 }, { wch: 24 }, { wch: 40 }, { wch: 60 }];
     XLSX.utils.book_append_sheet(wb, ws1, '判定結果');
     const ws2 = XLSX.utils.aoa_to_sheet(rows2);
     ws2['!cols'] = [{ wch: 24 }, { wch: 80 }];
@@ -1069,8 +1092,12 @@ document.addEventListener('DOMContentLoaded', () => {
     selectDrawing(entry.drawingType);
     $('errorSection').innerHTML = '';
     state._restoringEntryId = entry.id; // 差分比較で自分自身と比較しないため
-    renderResult(rule, entry.result, null, null);
-    state._restoringEntryId = null;
+    try {
+      // B-4: 当時の項目集合で表示（改定後の新項目を過去記録にphantom failとして混ぜない）
+      renderResult(ruleForStoredResult(rule, entry.result), entry.result, null, null);
+    } finally {
+      state._restoringEntryId = null; // C-3: 例外時のリーク防止
+    }
     if (lastRender) lastRender.restoredTs = entry.ts; // エクスポートに判定時刻・再表示注記を伝える（S3-3）
     // 第2波: 保存済みの人手確認（override＋メモ）を復元し、続きから編集可能にする
     state.overrides = Object.assign({}, entry.overrides || {});
@@ -1115,6 +1142,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('recheckFailBtn').addEventListener('click', () => {
     if (!lastRender) { alert('先にチェックを実行してください。'); return; }
     if (lastRender.result && lastRender.result._partialCheck) { alert('部分チェックの結果からは再絞り込みできません。全項目チェックを実行してください。'); return; }
+    if (!state.file) { alert('チェック対象のPDFが読み込まれていません。対象のファイルを選択してから実行してください。'); return; }
+    const rn = lastRender.result && lastRender.result._fileName;
+    if (rn && state.file.name !== rn) { alert(`表示中の結果は「${rn}」のものですが、現在読み込まれているファイルは「${state.file.name}」です。取り違え防止のため中止しました。対象のPDFを選び直してください。`); return; }
+    const rdt = lastRender.result && lastRender.result._drawingType;
+    if (rdt && state.drawingType !== rdt) { alert('表示中の結果と現在選択中の図面種別が異なります。取り違え防止のため中止しました（図面種別タブを結果と同じものに戻してください）。'); return; }
+    const rbt = lastRender.result && lastRender.result._businessType;
+    if (rbt && state.businessType !== rbt) { alert('表示中の結果と現在選択中の事業区分が異なります。取り違え防止のため中止しました。'); return; }
     const ids = [];
     lastRender.aggs.forEach(({ agg }, idx) => {
       agg.items.forEach(i => { const eff = effStatus(idx, i); if (eff === 'fail' || eff === 'warn') ids.push(i.id); });
@@ -1127,7 +1161,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 第2波: 修正指示書（不合格・要確認のみ抽出・CAD担当/外注へ渡す様式）
   $('fixSheetBtn').addEventListener('click', () => {
-    if (!lastRender || typeof XLSX === 'undefined') { alert('先にチェックを実行してください。'); return; }
+    if (typeof XLSX === 'undefined') { alert('Excel出力ライブラリが読み込まれていません。ページを再読み込みしてください。'); return; }
+    if (!lastRender) { alert('先にチェックを実行してください。'); return; }
     const { rule, aggs, result } = lastRender;
     const STJP = { pass: '合格', warn: '要確認', fail: '不合格', na: '非該当' };
     const cats = rule.categories || {};
@@ -1135,6 +1170,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ['NeV図面 修正指示書（AI一次チェック＋人手確認に基づく）'],
       ['図面種別', rule.meta.drawingName, 'ファイル', (result && result._fileName) || '', '作成日時', new Date().toLocaleString('ja-JP')],
       ['注記', 'AIの指摘には誤りがあり得ます。修正前に必ず原図面と突き合わせてください。人手確認済みの項目（メモ欄参照）を優先してください。'],
+      ...((result && result._partialCheck) ? [['注記', `⚠ 部分チェック（${result._partialCheck}項目のみ）の結果から作成した指示書です。全項目の指摘ではありません。`]] : []),
       [],
       ['No', 'グループ', 'カテゴリ', '項目', '判定', 'ページ・位置', '検出内容', '判定理由', '要件（直すべき内容）', '出典', '人手確認メモ', '修正者記入欄'],
     ];

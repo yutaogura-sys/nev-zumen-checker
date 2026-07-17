@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NeV 図面チェック（案件まとめ）</title>
-  <link rel="stylesheet" href="css/style.css?v=20260714b">
+  <link rel="stylesheet" href="css/style.css?v=20260714c">
 </head>
 <body>
   <header class="header">
@@ -48,7 +48,7 @@
       <label style="display:block;font-size:12px;margin-bottom:8px;"><input type="checkbox" id="twoPassHaisen" checked> 配線ルート図を2段階読み取りで実行（個別チェックと同精度・料金約2倍。外すと簡易1回読み）</label>
       <button class="btn btn-primary btn-large" id="runBtn" disabled>&#128269; 案件まとめチェックを実行</button>
       <p class="card-description" id="runNote" style="margin-top:10px;">APIキーと1枚以上の図面を設定してください</p>
-      <p class="card-description" style="font-size:12px;color:var(--muted);">※配線ルート図の2パス精査（Pass1読み取り→Pass2判定）は個別チェックのみで行われます。まとめチェックは全図面1パスの簡易判定です。数値・色分けの精密確認は個別チェックをご利用ください。</p>
+      <p class="card-description" style="font-size:12px;color:var(--muted);">※配線ルート図は上のトグルがONのとき個別チェックと同じ2段階読み取り（Pass1抽出→Pass2判定）で実行します。高精度（3回多数決）モードやページ選択・人手確認の記録は個別チェックのみの機能です。</p>
       <p class="card-description" style="font-size:.85em;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:8px 10px;">
         ⚠ <strong>データの取り扱い</strong>: アップロードした図面PDFは、判定のため Google の Gemini API に送信されます。個人情報・取引先名等を含む図面の取り扱いは、ご所属組織の規程に従ってください。送信データがAIの学習に利用されるかどうかは、お使いのGoogleアカウント・プランの設定によって異なります（Google AI Studio の設定をご確認ください）。
       </p>
@@ -80,28 +80,28 @@
 
   <!-- pdf.js 4系（CVE-2024-4367の恒久対応・index.htmlと同一方式） -->
   <script type="module">
-    import * as pdfjsLib from './vendor/pdf.min.mjs?v=20260714b'; // セルフホスト（CDN障害の単一障害点を除去。出所・検証はvendor/README.md）
-    pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs?v=20260714b';
+    import * as pdfjsLib from './vendor/pdf.min.mjs?v=20260714c'; // セルフホスト（CDN障害の単一障害点を除去。出所・検証はvendor/README.md）
+    pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs?v=20260714c';
     window.pdfjsLib = pdfjsLib;
   </script>
-  <script src="core/util.js?v=20260714b"></script>
-  <script src="core/pdf.js?v=20260714b"></script>
-  <script src="core/gemini.js?v=20260714b"></script>
-  <script src="core/cost.js?v=20260714b"></script>
-  <script src="core/aggregate.js?v=20260714b"></script>
-  <script src="core/deterministic.js?v=20260714b"></script>
-  <script src="core/reconcile.js?v=20260714b"></script>
-  <script src="core/vote.js?v=20260714b"></script>
-  <script src="core/verdict.js?v=20260714b"></script>
-  <script src="core/rules-registry.js?v=20260714b"></script>
-  <script src="core/prompt.js?v=20260714b"></script>
-  <script src="core/colorsanity.js?v=20260714b"></script>
-  <script src="vendor/xlsx.full.min.js?v=20260714b"></script>
-  <script src="core/crosscheck.js?v=20260714b"></script>
-  <script src="rules/mitori.js?v=20260714b"></script>
-  <script src="rules/heimen.js?v=20260714b"></script>
-  <script src="rules/haisen.js?v=20260714b"></script>
-  <script src="rules/keitou.js?v=20260714b"></script>
-  <script src="batch.js?v=20260714b"></script>
+  <script src="core/util.js?v=20260714c"></script>
+  <script src="core/pdf.js?v=20260714c"></script>
+  <script src="core/gemini.js?v=20260714c"></script>
+  <script src="core/cost.js?v=20260714c"></script>
+  <script src="core/aggregate.js?v=20260714c"></script>
+  <script src="core/deterministic.js?v=20260714c"></script>
+  <script src="core/reconcile.js?v=20260714c"></script>
+  <script src="core/vote.js?v=20260714c"></script>
+  <script src="core/verdict.js?v=20260714c"></script>
+  <script src="core/rules-registry.js?v=20260714c"></script>
+  <script src="core/prompt.js?v=20260714c"></script>
+  <script src="core/colorsanity.js?v=20260714c"></script>
+  <script src="vendor/xlsx.full.min.js?v=20260714c"></script>
+  <script src="core/crosscheck.js?v=20260714c"></script>
+  <script src="rules/mitori.js?v=20260714c"></script>
+  <script src="rules/heimen.js?v=20260714c"></script>
+  <script src="rules/haisen.js?v=20260714c"></script>
+  <script src="rules/keitou.js?v=20260714c"></script>
+  <script src="batch.js?v=20260714c"></script>
 </body>
 </html>

@@ -79,8 +79,12 @@
       // 電気設備を担保する必要がある。よって評価は常に総設置台数（LB/デマンドは容量の代替にならない）。
       // 総台数が無い場合のみ、参考として同時運転台数で下限評価（それでも超過ならwarnの根拠になる）。
       const effective = (total != null) ? total : simul;
-      const lbInUse = (simul != null && total != null && simul !== total);
-      const lbNote = lbInUse ? `（同時運転${simul}台の記載あり/総設置${total}台）` : '';
+      // A-1/A-2修正: 「デマンド使用の形跡」= 同時稼働台数の記載そのもの（総台数との一致・不一致は問わない。
+      // simul===total でも記載がある＝LB/デマンド関連の記載がある図面）。緩めの前提となる「容量充足」は
+      // 総台数が実際に読めた場合にしか確定できない（simulは下限であり充足の根拠にならない）。
+      const lbInUse = (simul != null);
+      const totalKnown = (total != null);
+      const lbNote = lbInUse ? (totalKnown ? `（同時運転${simul}台の記載あり/総設置${total}台）` : `（同時運転${simul}台の記載あり・総設置台数は未読取）`) : '';
       const cur = ctx && ctx.currentStatus;
       const required = effective > rated;
       if (required) {
@@ -90,12 +94,16 @@
         }
         return { status: cur || 'warn', detail: `【自動再検証】主幹${at}AT(定格${rated}台) < 総設置${effective}台${lbNote} → R7補正要件（全数フル出力の同時稼働前提）に対する容量不足の可能性。デマンド制御の記載と併せて要確認。` };
       }
-      // 容量は充足（総設置 ≤ 定格）。ただしデマンドコントローラー使用の形跡（同時運転台数の記載）が
+      // A-1修正: 総台数が読めていない場合、simul≦定格でも容量充足は確定できない（simulは下限）→ 参考注記のみ
+      if (!totalKnown) {
+        return { unfired: true, detail: `【自動検算未実施】総設置台数を読み取れないため、デマンド要否の確定検算はできません${lbNote}。主幹${at}AT(定格${rated}台)。総設置台数とデマンド制御の記載を目視確認してください。` };
+      }
+      // 容量は充足（総設置 ≤ 定格）。ただしデマンドコントローラー使用の形跡（同時稼働台数の記載）が
       // ある場合は⑩の記載必須のため、AIのfailを容量根拠でnaへ緩めない（記載不備の可能性を残す）。
       if (lbInUse) {
         return { unfired: true, detail: `【自動検算・参考】主幹${at}AT(定格${rated}台) ≥ 総設置${effective}台で容量は充足。ただしデマンド/LB使用の形跡${lbNote}があるため、⑩デマンド制御の記載（機能注記＋同時稼働台数）はAI判定・目視で確認してください。` };
       }
-      // デマンド使用の形跡なし＋容量充足 → ⑩は非該当。AIの fail は過剰指摘の可能性 → na へ緩和。
+      // デマンド使用の形跡なし＋容量充足（総台数読取済み） → ⑩は非該当。AIの fail は過剰指摘の可能性 → na へ緩和。
       if (cur === 'fail') {
         return { status: 'na', detail: `【自動再検証】主幹${at}AT(定格${rated}台) ≥ 総設置${effective}台・デマンド使用の形跡なし → デマンド制御は非該当。` };
       }
@@ -195,7 +203,11 @@
       if (at < minKey) {
         return { status: 'warn', detail: `【自動再検証】主幹${at}AT は 総設置${effective}台${lbNote}の同時100%運転に必要な ${minKey}AT を下回る可能性があります。R7補正の手引き（事業要件）は全数の定格出力での同時稼働を前提とした電気設備を求めるため、容量の妥当性を目視確認してください（LB/デマンドは容量の代替になりません）。` };
       }
-      return { unfired: true, detail: `【自動検算・参考】主幹${at}AT ≥ ${effective}台${lbNote}に必要な${minKey}AT（手引き定格表）。幹線・接地線等の仕様妥当性は別途目視確認してください。` };
+      if (total == null) {
+        // A-3: simulのみ（下限）で「充足」を示唆しない。不足warnは下限超過＝確実な根拠なので上で出している
+        return { unfired: true, detail: `【自動検算未実施】総設置台数を読み取れないため、主幹AT充足の確定検算はできません（同時運転${simul}台の下限では${minKey}AT以上）。総設置台数を目視確認してください。` };
+      }
+      return { unfired: true, detail: `【自動検算・参考】主幹${at}AT ≥ 総設置${effective}台${lbNote}に必要な${minKey}AT（手引き定格表）。幹線・接地線等の仕様妥当性は別途目視確認してください。` };
     },
 
     // 電気系統図: 分岐ブレーカーの容量(AT)が主幹ATを超えていないかの整合チェック（warn限定）
