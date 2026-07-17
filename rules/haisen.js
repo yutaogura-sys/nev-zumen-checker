@@ -116,9 +116,9 @@
       // ══ NeV 共通（配線情報）══
       { id: 'wire_type', group: 'nev', category: 'wiring_info', label: '電線の種類・サイズの記載',
         description: '使用する電線の種類とサイズが記載されているか。正解例：CV5.5-3C、CV5sq-3C、CVT100sq 等', required: true },
-      { id: 'total_length', group: 'nev', category: 'wiring_info', label: '配線全長の記載',
+      { id: 'total_length', group: 'nev', category: 'wiring_info', label: '配線全長の記載', src: '社内基準',
         description: '配線の全長が記載されているか。配線集計表に全長として記載されることが多い', required: true },
-      { id: 'length_breakdown', group: 'nev', category: 'wiring_info', label: '配線内訳（露出/管内/埋設等）の記載',
+      { id: 'length_breakdown', group: 'nev', category: 'wiring_info', label: '配線内訳（露出/管内/埋設等）の記載', src: '社内基準',
         description: '配線全長の内訳が配線方法別に記載されているか。正解例：「内訳 露出 10.7m」「管内 金属製 E25 4.4m」「合成樹脂 埋設 FEP30 2.0m」等', required: true },
       { id: 'section_details', group: 'nev', category: 'wiring_info', label: '各区間の配線詳細の記載',
         description: '配線ルート上の各区間ごとに、電線種類・配管種類・距離が記載されているか', required: true },
