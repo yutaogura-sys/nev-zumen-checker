@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NeV 図面チェックツール（統合版）</title>
-  <link rel="stylesheet" href="css/style.css?v=20260714c">
+  <link rel="stylesheet" href="css/style.css?v=20260717a">
 </head>
 <body>
   <header class="header">
@@ -161,31 +161,31 @@
   <!-- pdf.js 4系（CVE-2024-4367の恒久対応。3.11.174は該当版だったため更新。ESM配布のためmoduleで読み込み、
        従来コードとの互換のため window.pdfjsLib に載せる。module=deferred実行だが、利用は常にイベント時のため順序問題なし） -->
   <script type="module">
-    import * as pdfjsLib from './vendor/pdf.min.mjs?v=20260714c'; // セルフホスト（CDN障害の単一障害点を除去。出所・検証はvendor/README.md）
-    pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs?v=20260714c';
+    import * as pdfjsLib from './vendor/pdf.min.mjs?v=20260717a'; // セルフホスト（CDN障害の単一障害点を除去。出所・検証はvendor/README.md）
+    pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs?v=20260717a';
     window.pdfjsLib = pdfjsLib;
   </script>
   <!-- 波④: Excelエクスポート用 SheetJS（vendor/にセルフホスト）。読込失敗時は app.js がボタンを無効化 -->
-  <script src="vendor/xlsx.full.min.js?v=20260714c"></script>
+  <script src="vendor/xlsx.full.min.js?v=20260717a"></script>
   <!-- core -->
-  <script src="core/util.js?v=20260714c"></script>
-  <script src="core/pdf.js?v=20260714c"></script>
-  <script src="core/gemini.js?v=20260714c"></script>
-  <script src="core/cost.js?v=20260714c"></script>
-  <script src="core/aggregate.js?v=20260714c"></script>
-  <script src="core/deterministic.js?v=20260714c"></script>
-  <script src="core/reconcile.js?v=20260714c"></script>
-  <script src="core/vote.js?v=20260714c"></script>
-  <script src="core/colorsanity.js?v=20260714c"></script>
-  <script src="core/verdict.js?v=20260714c"></script>
-  <script src="core/rules-registry.js?v=20260714c"></script>
-  <script src="core/prompt.js?v=20260714c"></script>
+  <script src="core/util.js?v=20260717a"></script>
+  <script src="core/pdf.js?v=20260717a"></script>
+  <script src="core/gemini.js?v=20260717a"></script>
+  <script src="core/cost.js?v=20260717a"></script>
+  <script src="core/aggregate.js?v=20260717a"></script>
+  <script src="core/deterministic.js?v=20260717a"></script>
+  <script src="core/reconcile.js?v=20260717a"></script>
+  <script src="core/vote.js?v=20260717a"></script>
+  <script src="core/colorsanity.js?v=20260717a"></script>
+  <script src="core/verdict.js?v=20260717a"></script>
+  <script src="core/rules-registry.js?v=20260717a"></script>
+  <script src="core/prompt.js?v=20260717a"></script>
   <!-- rules -->
-  <script src="rules/mitori.js?v=20260714c"></script>
-  <script src="rules/heimen.js?v=20260714c"></script>
-  <script src="rules/haisen.js?v=20260714c"></script>
-  <script src="rules/keitou.js?v=20260714c"></script>
+  <script src="rules/mitori.js?v=20260717a"></script>
+  <script src="rules/heimen.js?v=20260717a"></script>
+  <script src="rules/haisen.js?v=20260717a"></script>
+  <script src="rules/keitou.js?v=20260717a"></script>
   <!-- app -->
-  <script src="app.js?v=20260714c"></script>
+  <script src="app.js?v=20260717a"></script>
 </body>
 </html>
