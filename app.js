@@ -571,7 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const aggs = computeAggs(rule, result);
     const groups = aggs.map(a => a.group);
     // 4-D: manual群は社内基準＝NeV合否とは別（参考）であることをラベルで明示
-    const groupLabel = { nev: 'NeV要件判定', manual: '作図センター基準（参考・NeV合否と別）' };
+    const groupLabel = { nev: 'NeV要件判定', manual: '旧・作図センター基準（R6旧マニュアル・参考／不合格断定なし）' };
     // 3-B: グループ枠（tabContentN/overallN/catsN）を件数分だけ動的生成（2枠決め打ちの撤廃）
     $('tabContents').innerHTML = aggs.map((_, i) =>
       `<div class="result-tab-content${i === 0 ? ' active' : ''}" id="tabContent${i}"><div class="overall-result" id="overall${i}"></div><div id="cats${i}"></div></div>`).join('');
@@ -681,8 +681,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // 出典表示: nev群=手引き5-9-N（図面種別から導出）/ manual群=社内基準。item.src で個別上書き可
   const SRC_59 = { mitori: '手引き5-9-1', heimen: '手引き5-9-2', haisen: '手引き5-9-3', keitou: '手引き5-9-4' };
   function srcLabelFor(item, groupName) {
+    if (item.src === '社内基準') return '旧社内基準(R6)'; // 旧基準扱い（2026-07-17決定）
     if (item.src) return item.src;
-    if (groupName === 'manual') return '社内基準';
+    if (groupName === 'manual') return '旧社内基準(R6)';
     const t = (lastRender && lastRender.ruleType) || state.drawingType; // B-8: タブ切替後の誤表示防止
     return SRC_59[t] || '手引き5-9';
   }
@@ -876,7 +877,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const overall = NevAggregate.decideOverall({ requiredFail: reqFail, requiredWarn: reqWarn, criticalFail: critFail, requiredFailForWarn: rule.settings.requiredFailForWarn });
       const passCnt = agg.items.filter(i => effStatus(idx, i) === 'pass').length;
       const naCnt = agg.items.filter(i => effStatus(idx, i) === 'na').length;
-      txt += `■ ${g === 'manual' ? '作図センター基準（参考・NeV合否と別）' : 'NeV要件判定'}: ${STJP[overall]}\n`;
+      txt += `■ ${g === 'manual' ? '旧・作図センター基準（R6旧マニュアル・参考／不合格断定なし）' : 'NeV要件判定'}: ${STJP[overall]}\n`;
       txt += `  合格 ${passCnt} / ${agg.items.length} 項目（必須 ${req.filter(i => effStatus(idx, i) === 'pass').length}/${req.length}${naCnt ? '・非該当' + naCnt : ''}${reqWarn ? '・要確認' + reqWarn : ''}${reqFail ? '・不合格' + reqFail : ''}）\n\n`;
       agg.items.forEach(it => {
         const eff = effStatus(idx, it);
@@ -919,7 +920,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!lastRender || typeof XLSX === 'undefined') return;
     const { rule, aggs, result } = lastRender;
     const STJP = { pass: '合格', warn: '要確認', fail: '不合格', na: '非該当' };
-    const groupLabelX = { nev: 'NeV要件判定', manual: '作図センター基準（参考・NeV合否と別）' };
+    const groupLabelX = { nev: 'NeV要件判定', manual: '旧・作図センター基準（R6旧マニュアル・参考／不合格断定なし）' };
     const cats = rule.categories || {};
     const precLabel = precisionLabelFor(result) + ((result && result._partialCheck) ? `・部分チェック(${result._partialCheck}項目のみ)` : '');
     const judgedIso = (result && result._ts) || lastRender.restoredTs || null;
@@ -1186,7 +1187,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const def = checkById[it.id] || {};
         rows.push([
           no,
-          g === 'manual' ? '社内基準（参考）' : 'NeV要件',
+          g === 'manual' ? '旧社内基準（R6・参考）' : 'NeV要件',
           (cats[it.category] || {}).title || it.category || '',
           it.label || it.id,
           STJP[eff] || eff,

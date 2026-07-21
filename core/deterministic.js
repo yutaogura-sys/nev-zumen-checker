@@ -174,11 +174,11 @@
       const corrNote = corrections.length ? `（表記補正: ${corrections.join(', ')}＝1文字差の誤読とみなし補正）` : '';
       if (checked === 0) return null;
       if (mismatches.length) {
-        return { status: 'warn', detail: `【自動再検証】ケーブルと配管サイズの不適合の可能性: ${mismatches.join(', ')}。要確認。${corrNote}※仕様表は作図センターマニュアル原本で未検証のため、原本と要突合。` };
+        return { status: 'warn', detail: `【自動再検証・旧基準】ケーブルと配管サイズの不適合の可能性: ${mismatches.join(', ')}。要確認。${corrNote}※この仕様表はR6作図マニュアル由来の旧基準です（最新版マニュアルは未作成のため照合不能）。参考情報として目視判断してください。` };
       }
       // 2-B: 仕様表（cableConduitMatch）は作図センターマニュアル原本で未検証（P0-7保留中）。
       // 未検証の表で「合格」を確定させない＝一致は参考情報の注記に留める（不適合の警告のみ維持）。
-      return { unfired: true, detail: `【自動検算・参考】ケーブル⇔配管サイズは手持ちの仕様表に適合（${checked}区間照合）。${corrNote}ただし仕様表が原本未検証のため合格判定には用いません。目視確認してください。` };
+      return { unfired: true, detail: `【自動検算・参考・旧基準】ケーブル⇔配管サイズは手持ちの仕様表（R6作図マニュアル由来の旧基準）に適合（${checked}区間照合）。${corrNote}最新版マニュアルは未作成のため、参考情報に留め合格判定には用いません。目視確認してください。` };
     },
 
     // 電気系統図: 総設置台数に対する主幹ATの充足をコード照合（R7補正: 全数フル出力の同時稼働前提。

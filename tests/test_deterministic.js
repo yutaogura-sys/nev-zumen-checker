@@ -84,7 +84,7 @@ const sv = (o, id) => (o[id] && !o[id].noteOnly) ? o[id].status : 'none';
 function ccm(pairs) { return sv(det.run(haisen, { cable_conduit_pairs: pairs }, {}), 'mc_cable_conduit_match'); }
 // 2-B: 仕様表が原本未検証のため、適合でも pass を確定しない（参考注記のみ）。不適合の warn は維持。
 eq('2-B 適合 [CVT8sq-3C,PFD-28] → pass確定しない(注記のみ)', ccm([['CVT8sq-3C', 'PFD-28']]), 'none');
-ok(/原本未検証/.test((det.run(haisen, { cable_conduit_pairs: [['CVT8sq-3C', 'PFD-28']] }, {}).mc_cable_conduit_match || {}).detail || ''), '2-B 適合時は「原本未検証」の参考注記が付く');
+ok(/旧基準/.test((det.run(haisen, { cable_conduit_pairs: [['CVT8sq-3C', 'PFD-28']] }, {}).mc_cable_conduit_match || {}).detail || ''), '2-B 適合時は「旧基準」の参考注記が付く（2026-07-17基準変更）');
 eq('不適合 [CVT8sq-3C,PFD-54] → warn', ccm([['CVT8sq-3C', 'PFD-54']]), 'warn');
 eq('2-B 大小文字/空白ゆれ吸収も注記のみ', ccm([[' cvt8sq-3c ', 'pfd-28']]), 'none');
 eq('仕様表に無いケーブルのみ → 検算対象外(none)', ccm([['UNKNOWN-CABLE', 'XYZ']]), 'none');

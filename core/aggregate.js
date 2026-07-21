@@ -62,12 +62,24 @@
       }
       // 'na'（非該当）はそのまま維持。任意項目の fail のみ warn へ降格。
       if (status !== 'na' && !check.required && status === 'fail') status = 'warn';
+      // 旧基準デグレード（P1単調性の承認済み例外②・2026-07-17ユーザー決定）:
+      // 作図センターマニュアル（R6補正基準・最新版は今年作成されない）由来の基準は「古いもの」として扱い、
+      // 現行案件の不合格断定に用いない＝最大でも warn（要確認）。判定ロジック自体は残す。
+      // 対象: manual群（作図センター基準タブ）＋ NeV群のうち出典が社内基準（src:'社内基準'）の項目。
+      // fail→warn は緩め方向だが、色サニティ（例外①）と同様 original_status で監査可能にする。
+      const isLegacyBasis = (check.group === 'manual') || (check.src === '社内基準');
+      let legacyOriginal;
+      if (isLegacyBasis && status === 'fail') {
+        legacyOriginal = 'fail';
+        detail = '【旧基準・自動格下げ 不合格→要確認】この項目はR6作図マニュアル由来の旧基準です（最新版マニュアルは未作成）。現行案件の不合格断定には用いず、参考として目視確認してください。元の判定理由: ' + (detail || '（詳細なし）');
+        status = 'warn';
+      }
       return Object.assign({}, check, {
         status,
         found_text: result.found_text || '',
         detail,
         confidence: conf || undefined,
-      });
+      }, isLegacyBasis ? { legacy: true } : null, legacyOriginal ? { original_status: legacyOriginal } : null);
     });
 
     const categoryResults = {};

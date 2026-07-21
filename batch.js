@@ -220,7 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
     lastDone.forEach(d => {
       d.groupAggs.forEach(ga => {
-        rowsS.push([d.rule.meta.drawingName, d.fileName, d.twoPass ? '2段階' : '1回', ga.group === 'manual' ? '社内基準（参考）' : 'NeV要件', STJP[ga.agg.overall] || ga.agg.overall, `${ga.agg.requiredPass}/${ga.agg.requiredTotal}`, ga.agg.criticalFail || 0]);
+        rowsS.push([d.rule.meta.drawingName, d.fileName, d.twoPass ? '2段階' : '1回', ga.group === 'manual' ? '旧社内基準（R6・参考）' : 'NeV要件', STJP[ga.agg.overall] || ga.agg.overall, `${ga.agg.requiredPass}/${ga.agg.requiredTotal}`, ga.agg.criticalFail || 0]);
       });
     });
     // R-1: エラー・キャンセル・未実行の図面を「未判定」として明記（無言欠落＝記録の虚偽を防ぐ）
@@ -247,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ['グループ', '項目', '必須/任意', '判定', '検出内容', '詳細']];
       d.groupAggs.forEach(ga => {
         ga.agg.items.forEach(i => {
-          rows.push([ga.group === 'manual' ? '社内基準（参考）' : 'NeV要件', i.label || i.id, i.required ? '必須' : '任意', STJP[i.status] || i.status, i.found_text || '', i.detail || '']);
+          rows.push([ga.group === 'manual' ? '旧社内基準（R6・参考）' : 'NeV要件', i.label || i.id, i.required ? '必須' : '任意', STJP[i.status] || i.status, i.found_text || '', i.detail || '']);
         });
       });
       const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -290,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('perDrawing').innerHTML = done.map(d => {
       const groups = d.groupAggs.map(ga => {
         // 4-D: 作図センターマニュアル群は社内基準＝NeV合否とは別（参考）であることを明示
-        const glabel = ga.group === 'manual' ? '作図センター基準（参考・NeV合否と別）' : 'NeV要件';
+        const glabel = ga.group === 'manual' ? '旧・作図センター基準（R6旧マニュアル・参考／不合格断定なし）' : 'NeV要件';
         return `${statusPill(ga.agg.overall)} ${glabel}（必須 ${ga.agg.requiredPass}/${ga.agg.requiredTotal}${ga.agg.totalNa ? '・非該当' + ga.agg.totalNa : ''}${ga.agg.criticalFail ? '・重大不備' + ga.agg.criticalFail : ''}）`;
       }).join('　');
       // 重点確認チップ（fail/warn/確信度低/必須na/根拠未提示/自動検算未実施）

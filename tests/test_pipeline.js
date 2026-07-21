@@ -185,6 +185,29 @@ const CK = (id, extra) => Object.assign({ id, category: 'c', label: id, required
   eq('B-2: status変更を伴うtrustLoosen上書きは従来どおりpass確定', r.agg.items[0].status, 'pass');
 }
 
+// ══ 旧基準デグレード（承認済み例外②・2026-07-17）: manual群/社内基準出典の fail は最大warn ══
+{
+  const r = agg.aggregateResults([{ id: 'm1', status: 'fail', found_text: 'x', confidence: 'high', detail: '逸脱' }],
+    [Object.assign(CK('m1'), { group: 'manual' })]);
+  eq('旧基準: manual群のfail→warn格下げ', r.items[0].status, 'warn');
+  eq('旧基準: original_statusで監査可能', r.items[0].original_status, 'fail');
+  ok(/旧基準・自動格下げ/.test(r.items[0].detail), '旧基準: 格下げ注記つき');
+}
+{
+  const r = agg.aggregateResults([{ id: 's1', status: 'fail', found_text: 'x', confidence: 'high' }],
+    [Object.assign(CK('s1'), { src: '社内基準' })]);
+  eq('旧基準: src=社内基準のfail→warn格下げ', r.items[0].status, 'warn');
+}
+{
+  const r = agg.aggregateResults([{ id: 'n1', status: 'fail', found_text: 'x', confidence: 'high' }], [CK('n1')]);
+  eq('旧基準: NeV要件(非legacy)のfailはfailのまま', r.items[0].status, 'fail');
+}
+{
+  const r = agg.aggregateResults([{ id: 'm2', status: 'pass', found_text: 'x', confidence: 'high' }],
+    [Object.assign(CK('m2'), { group: 'manual' })]);
+  eq('旧基準: manual群のpassは不変（格下げはfailのみ）', r.items[0].status, 'pass');
+}
+
 // ══ Suite P: status/confidence「__proto__」等がObject.prototype経由で安全網を素通りしない ══
 {
   const r = agg.aggregateResults([{ id: 'a', status: '__proto__', found_text: 'x', confidence: 'high' }], [CK('a')]);
