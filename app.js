@@ -928,7 +928,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // シート1: 判定結果（メタ情報＋総合＋項目明細。人手オーバーライド反映後の実効値で出力）
     const rows1 = [
-      ['NeV 図面チェックツール（統合版） 判定結果'],
+      [(window.LOCAL_PACK_LABEL || 'NeV 図面チェックツール（統合版）') + ' 判定結果'],
       ['図面種別', rule.meta.drawingName, '事業区分', state.businessType === 'kiso' ? '基礎充電' : '目的地充電'],
       ['判定日時', judgedStr, '判定モード', precLabel],
       ['注記', 'AIによる一次判定＋人手確認の記録です。最終判断は目視確認済みが前提です。'],
@@ -1212,6 +1212,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 起動 ──
   buildDrawingTabs();
+  // ローカル個別ツール版（build-local-pack生成ページ）: 図面種別を固定しタブを隠す。未定義なら従来どおり
+  if (window.LOCK_DRAWING_TYPE && NevRules.getRule(window.LOCK_DRAWING_TYPE)) {
+    selectDrawing(window.LOCK_DRAWING_TYPE);
+    const tabs = $('drawingTabs'); if (tabs) tabs.style.display = 'none';
+  }
   // pdf.js（CDN）の読み込み失敗を明示する。放置すると「ファイルが破損している可能性」等の
   // 無関係なエラー文言に化けて誤誘導になる（XLSX側の同等ガードとの対称化）。
   if (typeof window.pdfjsLib === 'undefined' || !window.pdfjsLib) {
