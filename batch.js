@@ -247,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ['グループ', '項目', '必須/任意', '判定', '検出内容', '詳細']];
       d.groupAggs.forEach(ga => {
         ga.agg.items.forEach(i => {
-          rows.push([ga.group === 'manual' ? '旧社内基準（R6・参考）' : 'NeV要件', i.label || i.id, i.required ? '必須' : '任意', STJP[i.status] || i.status, i.found_text || '', i.detail || '']);
+          rows.push([ga.group === 'manual' ? '旧社内基準（R6・参考）' : 'NeV要件', i.label || i.id, i.required ? '必須' : '任意', (STJP[i.status] || i.status) + (i.original_status ? `（自動降格前:${STJP[i.original_status] || i.original_status}）` : ''), i.found_text || '', i.detail || '']);
         });
       });
       const ws = XLSX.utils.aoa_to_sheet(rows);

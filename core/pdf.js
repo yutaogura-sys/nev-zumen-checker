@@ -53,6 +53,21 @@
     return out;
   }
 
+  // pdf.js の render は環境（GPU/ドライバ/ヘッドレス）によって解決も拒否もしないままハングすることがある
+  // （2026-07-23 検証環境で実測: page.render が console エラーなしで永久未解決）。ハングすると呼び出し側の
+  // await が永久待機し、キャンセル（AbortSignal は fetch のみ）でも中断できずリロード以外に復旧手段がなくなる。
+  // → 全 render 呼び出しにタイムアウトを設ける。補助画像（プレビュー/クロップ/サムネイル）は既存の
+  //   「失敗時スキップ」設計に乗せ、本命の画像化（pdfToImages）は明示エラーで可視化する。
+  function renderWithTimeout(renderTask, ms, label) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => {
+        try { renderTask.cancel(); } catch (e) { /* noop */ }
+        reject(new Error(`${label || 'PDFレンダリング'}がタイムアウトしました（${Math.round(ms / 1000)}秒）。ページを再読み込みして再実行してください。`));
+      }, ms);
+      renderTask.promise.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+    });
+  }
+
   // PDF → ページ単位の JPEG（base64）配列。maxPages で打ち切り。
   // truncated: ページ超過/ペイロード超過で一部ページを含められなかった場合 true（見逃し防止の警告用）。
   // scanned: テキスト層が無い（スキャン画像）と判定した場合 true。その場合は描画スケールを上げてOCR精度を確保。
@@ -89,7 +104,7 @@
       canvas.height = Math.floor(viewport.height);
       const ctx = canvas.getContext('2d');
 
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      await renderWithTimeout(page.render({ canvasContext: ctx, viewport }), o.renderTimeoutMs || 60000, `ページ${i}の画像化`);
       const dataUrl = canvas.toDataURL('image/jpeg', o.jpegQuality);
       const base64 = dataUrl.split(',')[1];
       totalBase64Size += base64.length;
@@ -134,7 +149,7 @@
           canvas.height = Math.max(1, Math.floor(sv.height));
           const ctx = canvas.getContext('2d');
           if (!ctx) continue;
-          await page.render({ canvasContext: ctx, viewport: sv }).promise;
+          await renderWithTimeout(page.render({ canvasContext: ctx, viewport: sv }), o.auxRenderTimeoutMs || 15000, `ページ${i}のサムネイル生成`);
           thumbs.push({ pageNumber: i, dataUrl: canvas.toDataURL('image/jpeg', 0.6) });
           canvas.width = 0; canvas.height = 0;
         } catch (e) { /* このページのサムネイルのみ諦める */ }
@@ -194,7 +209,7 @@
       canvas.height = Math.floor(viewport.height);
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Canvas context の取得に失敗しました');
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      await renderWithTimeout(page.render({ canvasContext: ctx, viewport }), o.auxRenderTimeoutMs || 30000, 'プレビュー生成');
       return canvas;
     } catch (e) {
       console.error('プレビュー生成エラー:', e);
@@ -219,7 +234,7 @@
       full.height = Math.floor(viewport.height);
       const ctx = full.getContext('2d');
       if (!ctx) return null;
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      await renderWithTimeout(page.render({ canvasContext: ctx, viewport }), o.auxRenderTimeoutMs || 30000, '表題欄クロップ生成');
       // 下部35%の帯（表題欄は下辺に沿って配置されることが多い）を切り出す
       const bandRatio = o.titleBlockBandRatio || 0.35;
       const cropY = Math.floor(full.height * (1 - bandRatio));

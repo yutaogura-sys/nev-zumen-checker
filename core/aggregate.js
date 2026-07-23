@@ -30,6 +30,7 @@
     // 根拠(found_text)の無い「合格」を warn へ降格（既定on）。品質最優先：幻覚・無根拠のpassを禁止。
     const requireEvidenceForPass = opts.requireEvidenceForPass !== false;
     const items = checks.map(check => {
+      const answered = !!resultMap[check.id]; // 未回答（AI応答の欠落）と実judgmentの区別（旧基準デグレードの適用可否に使用）
       const result = resultMap[check.id] || { status: 'fail', found_text: '', detail: '判定結果が取得できませんでした' };
       // ステータス正規化: 大小文字/前後空白を吸収し、未知の値は安全側の warn（要確認）に寄せる。
       // （Geminiが 'PASS' や '合格' 等を返しても、無色バッジ・誤って合格扱いになるのを防ぐ）
@@ -61,17 +62,31 @@
         status = 'warn';
       }
       // 'na'（非該当）はそのまま維持。任意項目の fail のみ warn へ降格。
-      if (status !== 'na' && !check.required && status === 'fail') status = 'warn';
+      // 他の自動降格（色サニティ・旧基準）と同じ監査様式（注記＋original_status）に揃える:
+      // pill「要確認」なのに detail が不合格の判定理由のまま＝説明の非対称、を解消（2026-07-23 第4R所見）。
+      let optionalOriginal;
+      if (status !== 'na' && !check.required && status === 'fail') {
+        optionalOriginal = 'fail';
+        detail = '【任意項目・自動降格 不合格→要確認】任意項目のため不合格とせず要確認として表示します。元の判定理由: ' + (detail || '（詳細なし）');
+        status = 'warn';
+      }
       // 旧基準デグレード（P1単調性の承認済み例外②・2026-07-17ユーザー決定）:
       // 作図センターマニュアル（R6補正基準・最新版は今年作成されない）由来の基準は「古いもの」として扱い、
       // 現行案件の不合格断定に用いない＝最大でも warn（要確認）。判定ロジック自体は残す。
       // 対象: manual群（作図センター基準タブ）＋ NeV群のうち出典が社内基準（src:'社内基準'）の項目。
       // fail→warn は緩め方向だが、色サニティ（例外①）と同様 original_status で監査可能にする。
+      // ※未回答（AI応答欠落）の合成failは「基準の新旧」と無関係なデータ欠落なので格下げしない
+      //   （haisen の total_length 等は NeV タブの必須項目——未回答まで warn 化すると総合が緩む false-PASS 経路）。
       const isLegacyBasis = (check.group === 'manual') || (check.src === '社内基準');
       let legacyOriginal;
-      if (isLegacyBasis && status === 'fail') {
+      if (isLegacyBasis && status === 'fail' && answered) {
         legacyOriginal = 'fail';
-        detail = '【旧基準・自動格下げ 不合格→要確認】この項目はR6作図マニュアル由来の旧基準です（最新版マニュアルは未作成）。現行案件の不合格断定には用いず、参考として目視確認してください。元の判定理由: ' + (detail || '（詳細なし）');
+        // 検算(_deterministic)由来のfailは根拠がコード計算（現行手引きベースあり得る）なので、
+        // 「R6由来の判定だから格下げ」と書くと自己矛盾になる。項目の位置づけ（旧基準扱い）を理由にした文言に分ける。
+        detail = (result._deterministic
+          ? '【旧基準・自動格下げ 不合格→要確認】この項目は旧基準（R6作図マニュアル）扱いのため不合格とは断定しませんが、元の判定にはコード検算が含まれます。指摘内容を必ず目視確認してください。元の判定理由: '
+          : '【旧基準・自動格下げ 不合格→要確認】この項目はR6作図マニュアル由来の旧基準です（最新版マニュアルは未作成）。現行案件の不合格断定には用いず、参考として目視確認してください。元の判定理由: ')
+          + (detail || '（詳細なし）');
         status = 'warn';
       }
       return Object.assign({}, check, {
@@ -79,7 +94,13 @@
         found_text: result.found_text || '',
         detail,
         confidence: conf || undefined,
-      }, isLegacyBasis ? { legacy: true } : null, legacyOriginal ? { original_status: legacyOriginal } : null);
+      }, isLegacyBasis ? { legacy: true } : null,
+      // original_status: legacy格下げ > 色サニティ等が result行に書いた値（「自動降格のまま」表示・監査用）。
+      // result行由来の値は KNOWN で正規化してから通す（万一未知の文字列が紛れても表示層に生値を流さない）。
+      (() => {
+        const passOriginal = legacyOriginal || optionalOriginal || KNOWN[String(result.original_status == null ? '' : result.original_status).trim().toLowerCase()];
+        return passOriginal ? { original_status: passOriginal } : null;
+      })());
     });
 
     const categoryResults = {};

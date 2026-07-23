@@ -185,6 +185,35 @@ const CK = (id, extra) => Object.assign({ id, category: 'c', label: id, required
   eq('B-2: status変更を伴うtrustLoosen上書きは従来どおりpass確定', r.agg.items[0].status, 'pass');
 }
 
+// 任意項目fail→warn降格の監査様式（第4R所見）: 注記＋original_statusが付く（他の自動降格と対称）
+{
+  const r = agg.aggregateResults([{ id: 'o1', status: 'fail', found_text: 'x', confidence: 'high', detail: '記載なし' }], [Object.assign(CK('o1'), { required: false })]);
+  eq('任意fail降格: warn化', r.items[0].status, 'warn');
+  eq('任意fail降格: 注記', /【任意項目・自動降格 不合格→要確認】/.test(r.items[0].detail), true);
+  eq('任意fail降格: original保持', r.items[0].original_status, 'fail');
+}
+
+// 旧基準デグレードの未回答例外: AI応答が欠落した合成failは格下げしない（データ欠落は基準の新旧と無関係）
+{
+  const r = agg.aggregateResults([], [Object.assign(CK('mL'), { group: 'manual', required: true })]);
+  eq('旧基準・未回答はfail維持', r.items[0].status, 'fail');
+  eq('旧基準・未回答はoriginal_statusなし', r.items[0].original_status, undefined);
+}
+
+// 旧基準デグレード × 検算(_deterministic)fail: 格下げは維持しつつ、検算専用の文言（自己矛盾しない注記）になる
+{
+  const r = agg.aggregateResults([{ id: 'mD', status: 'fail', found_text: 'x', confidence: 'high', detail: '【自動再検証】容量不足の可能性', _deterministic: true }], [Object.assign(CK('mD'), { group: 'manual' })]);
+  eq('旧基準×検算fail: warn化', r.items[0].status, 'warn');
+  eq('旧基準×検算fail: 検算文言', /コード検算が含まれます/.test(r.items[0].detail), true);
+  eq('旧基準×検算fail: original保持', r.items[0].original_status, 'fail');
+}
+
+// original_status の項目引き継ぎ（色サニティ等がresult行に書いた値→items。「自動降格のまま」表示の前提）
+{
+  const r = agg.aggregateResults([{ id: 'c1', status: 'warn', found_text: 'x', confidence: 'high', original_status: 'fail', detail: '【自動降格 fail→warn】…' }], [CK('c1')]);
+  eq('original_status引き継ぎ: result行→item', r.items[0].original_status, 'fail');
+}
+
 // ══ 旧基準デグレード（承認済み例外②・2026-07-17）: manual群/社内基準出典の fail は最大warn ══
 {
   const r = agg.aggregateResults([{ id: 'm1', status: 'fail', found_text: 'x', confidence: 'high', detail: '逸脱' }],

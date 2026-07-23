@@ -883,7 +883,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const eff = effStatus(idx, it);
         const ov = state.overrides[idx + ':' + it.id];
         const m = { pass: '[OK]', fail: '[NG]', warn: '[!?]', na: '[--]' }[eff] || '[?]';
-        txt += `${m} ${it.label}${it.required ? '' : ' [任意]'}${ov ? '（人手: AI=' + (it.status) + '→' + eff + '）' : ''}${state.ovMemos[idx + ':' + it.id] ? '（メモ: ' + state.ovMemos[idx + ':' + it.id] + '）' : ''}\n`;
+        txt += `${m} ${it.label}${it.required ? '' : ' [任意]'}${ov ? '（人手: AI=' + it.status + (it.original_status ? '(降格前:' + it.original_status + ')' : '') + '→' + eff + '）' : ''}${state.ovMemos[idx + ':' + it.id] ? '（メモ: ' + state.ovMemos[idx + ':' + it.id] + '）' : ''}\n`;
         if (it.found_text) txt += `    検出: ${it.found_text}\n`;
         if (it.detail) txt += `    ${it.detail}\n`;
       });
@@ -956,7 +956,7 @@ document.addEventListener('DOMContentLoaded', () => {
           it.label || it.id,
           it.required ? '必須' : '任意',
           STJP[eff] || eff,
-          STJP[it.status] || it.status,
+          (STJP[it.status] || it.status) + (it.original_status ? `（自動降格前:${STJP[it.original_status] || it.original_status}）` : ''),
           ov ? `あり（AI:${STJP[it.status] || it.status}→${STJP[eff] || eff}）` : '',
           state.ovMemos[idx + ':' + it.id] || '',
           it.found_text || '',
@@ -1118,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let ts = entry.ts; try { ts = new Date(entry.ts).toLocaleString('ja-JP'); } catch (er) { /* keep raw */ }
     $('resultTypeLabel').textContent += ' ／ 履歴表示';
     $('reviewSummary').insertAdjacentHTML('afterbegin',
-      `<div class="review-note" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;">&#128337; ${esc(ts)} の判定結果を履歴から再表示しています。人手確認（プルダウン・メモ）はこの履歴に保存され、続きから編集できます。設定（図面種別・事業区分・精度モード）も当時の値に切り替えているため、次回の実行前にご確認ください。</div>`);
+      `<div class="review-note" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;">&#128337; ${esc(ts)} の判定結果を履歴から再表示しています。人手確認（プルダウン・メモ）はこの履歴に保存され、続きから編集できます。設定（図面種別・事業区分・精度モード）も当時の値に切り替えているため、次回の実行前にご確認ください。※判定ルールが改定された場合、現在のルールで再集計するため、総合判定が履歴一覧のバッジと異なることがあります（例: 旧基準項目の不合格→要確認格下げ）。</div>`);
   }
   $('historyToggle').addEventListener('click', e => {
     e.preventDefault();
