@@ -21,7 +21,9 @@
     opts = opts || {};
     const requiredFailForWarn = (typeof opts.requiredFailForWarn === 'number') ? opts.requiredFailForWarn : 2;
 
-    const resultMap = {};
+    // null-proto: チェックidがプロトタイプ属性名（constructor等）と衝突しても、未回答なのに
+    // answered=true になったり Object.prototype のメンバを判定に使ったりしない（KNOWNと同じ衛生）。
+    const resultMap = Object.create(null);
     (Array.isArray(rawResults) ? rawResults : []).forEach(r => { if (r && r.id != null) resultMap[r.id] = r; });
 
     const KNOWN = Object.assign(Object.create(null), { pass: 'pass', fail: 'fail', warn: 'warn', na: 'na' }); // 「__proto__」等のstatus文字列がObject.prototype経由で正規化を素通りしない

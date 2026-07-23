@@ -185,6 +185,14 @@ const CK = (id, extra) => Object.assign({ id, category: 'c', label: id, required
   eq('B-2: status変更を伴うtrustLoosen上書きは従来どおりpass確定', r.agg.items[0].status, 'pass');
 }
 
+// resultMapのプロトタイプ衛生（第5R）: プロトタイプ属性名のidが「未回答なのに回答扱い」にならない
+{
+  const r = agg.aggregateResults([], [CK('constructor'), Object.assign(CK('toString'), { group: 'manual' })]);
+  eq('proto衛生: 未回答constructor=fail', r.items[0].status, 'fail');
+  eq('proto衛生: 未回答detailが合成文言', /判定結果が取得できませんでした/.test(r.items[0].detail), true);
+  eq('proto衛生: manual群toStringも未回答fail維持（格下げなし）', r.items[1].status, 'fail');
+}
+
 // 任意項目fail→warn降格の監査様式（第4R所見）: 注記＋original_statusが付く（他の自動降格と対称）
 {
   const r = agg.aggregateResults([{ id: 'o1', status: 'fail', found_text: 'x', confidence: 'high', detail: '記載なし' }], [Object.assign(CK('o1'), { required: false })]);

@@ -325,7 +325,8 @@ function suiteC(N) {
         }
         if (i.original_status === 'fail') {
           // 任意×旧基準は「任意項目・自動降格」が先に効く（どちらの注記でも warn＋監査可能なら不変則は満たす）
-          const noted = /旧基準・自動格下げ/.test(String(i.detail)) || (!ch.required && /任意項目・自動降格/.test(String(i.detail)));
+          // 受理する注記: 旧基準格下げ／任意降格（任意項目のみ）／色サニティ等の先行自動降格（原文は raw行の original_status 経由）
+          const noted = /旧基準・自動格下げ|自動降格/.test(String(i.detail));
           check(i.status === 'warn' && noted, S, 'inv-legacy:格下げ注記', `[${type}] 格下げの注記/warn不整合 id=${i.id}`, { case: c, item: { id: i.id, status: i.status } });
         }
       } else {

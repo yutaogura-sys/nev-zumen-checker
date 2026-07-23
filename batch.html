@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NeV 図面チェック（案件まとめ）</title>
-  <link rel="stylesheet" href="css/style.css?v=20260723a">
+  <link rel="stylesheet" href="css/style.css?v=20260723b">
 </head>
 <body>
   <header class="header">
@@ -80,28 +80,28 @@
 
   <!-- pdf.js 4系（CVE-2024-4367の恒久対応・index.htmlと同一方式） -->
   <script type="module">
-    import * as pdfjsLib from './vendor/pdf.min.mjs?v=20260723a'; // セルフホスト（CDN障害の単一障害点を除去。出所・検証はvendor/README.md）
-    pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs?v=20260723a';
+    import * as pdfjsLib from './vendor/pdf.min.mjs?v=20260723b'; // セルフホスト（CDN障害の単一障害点を除去。出所・検証はvendor/README.md）
+    pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs?v=20260723b';
     window.pdfjsLib = pdfjsLib;
   </script>
-  <script src="core/util.js?v=20260723a"></script>
-  <script src="core/pdf.js?v=20260723a"></script>
-  <script src="core/gemini.js?v=20260723a"></script>
-  <script src="core/cost.js?v=20260723a"></script>
-  <script src="core/aggregate.js?v=20260723a"></script>
-  <script src="core/deterministic.js?v=20260723a"></script>
-  <script src="core/reconcile.js?v=20260723a"></script>
-  <script src="core/vote.js?v=20260723a"></script>
-  <script src="core/verdict.js?v=20260723a"></script>
-  <script src="core/rules-registry.js?v=20260723a"></script>
-  <script src="core/prompt.js?v=20260723a"></script>
-  <script src="core/colorsanity.js?v=20260723a"></script>
-  <script src="vendor/xlsx.full.min.js?v=20260723a"></script>
-  <script src="core/crosscheck.js?v=20260723a"></script>
-  <script src="rules/mitori.js?v=20260723a"></script>
-  <script src="rules/heimen.js?v=20260723a"></script>
-  <script src="rules/haisen.js?v=20260723a"></script>
-  <script src="rules/keitou.js?v=20260723a"></script>
-  <script src="batch.js?v=20260723a"></script>
+  <script src="core/util.js?v=20260723b"></script>
+  <script src="core/pdf.js?v=20260723b"></script>
+  <script src="core/gemini.js?v=20260723b"></script>
+  <script src="core/cost.js?v=20260723b"></script>
+  <script src="core/aggregate.js?v=20260723b"></script>
+  <script src="core/deterministic.js?v=20260723b"></script>
+  <script src="core/reconcile.js?v=20260723b"></script>
+  <script src="core/vote.js?v=20260723b"></script>
+  <script src="core/verdict.js?v=20260723b"></script>
+  <script src="core/rules-registry.js?v=20260723b"></script>
+  <script src="core/prompt.js?v=20260723b"></script>
+  <script src="core/colorsanity.js?v=20260723b"></script>
+  <script src="vendor/xlsx.full.min.js?v=20260723b"></script>
+  <script src="core/crosscheck.js?v=20260723b"></script>
+  <script src="rules/mitori.js?v=20260723b"></script>
+  <script src="rules/heimen.js?v=20260723b"></script>
+  <script src="rules/haisen.js?v=20260723b"></script>
+  <script src="rules/keitou.js?v=20260723b"></script>
+  <script src="batch.js?v=20260723b"></script>
 </body>
 </html>

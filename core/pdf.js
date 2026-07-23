@@ -82,15 +82,23 @@
       throw new Error('PDFファイルの読み込みに失敗しました。ファイルが破損しているか、パスワードで保護されている可能性があります。');
     }
 
+    // pdf.destroy() を必ず呼ぶ（呼ばないと worker 側メモリが解放されず、案件まとめの
+    // 連続処理でメモリが単調増加→途中クラッシュの経路になる。返り値は base64 化済みで destroy 後も安全）。
+    try {
+
     const images = [];
     const pageCount = pdf.numPages;
     const targetPages = resolveTargetPages(pageCount, o.maxPages, o.pages);
     let totalBase64Size = 0;
 
     // テキスト層の有無を1ページ目で判定（無ければスキャンPDF→高DPIでOCR精度確保）
+    // getTextContent も render と同類の worker 呼び出し＝ハングし得るため、タイムアウトで通常スケールに落とす。
     let scanned = false;
     try {
-      const tc = await (await pdf.getPage(1)).getTextContent();
+      const tc = await Promise.race([
+        (async () => (await pdf.getPage(1)).getTextContent())(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('getTextContent timeout')), o.auxRenderTimeoutMs || 15000)),
+      ]);
       scanned = !tc || !tc.items || tc.items.length === 0;
     } catch (e) { /* 判定不能時は通常スケール */ }
     const baseScale = scanned ? (o.scannedScale || 4.0) : o.renderScale;
@@ -121,6 +129,10 @@
 
     if (images.length === 0) throw new Error('PDFから画像を生成できませんでした。');
     return { images, pageCount, truncated: images.length < pageCount, scanned };
+
+    } finally {
+      try { pdf.destroy(); } catch (e) { /* noop */ }
+    }
   }
 
   // D: ページ選択UI用の軽量サムネイル生成（旧・電気系統図ツール pdfGetPageThumbnails の移植）。
@@ -198,9 +210,10 @@
   // 1ページ目のプレビュー用 canvas を返す（失敗時 null）。
   async function pdfToPreview(file, opts) {
     const o = Object.assign({}, DEFAULTS, opts || {});
+    let pdf; // finally で必ず destroy（worker側メモリ解放。canvas はラスタ化済みで destroy 後も安全）
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, isEvalSupported: false /* FZ-2: CVE-2024-4367対策 */ }).promise;
+      pdf = await pdfjsLib.getDocument({ data: arrayBuffer, isEvalSupported: false /* FZ-2: CVE-2024-4367対策 */ }).promise;
       const page = await pdf.getPage(1);
       const safeScale = calcSafeScale(page, o.previewScale);
       const viewport = page.getViewport({ scale: safeScale });
@@ -214,6 +227,8 @@
     } catch (e) {
       console.error('プレビュー生成エラー:', e);
       return null;
+    } finally {
+      try { if (pdf) pdf.destroy(); } catch (e) { /* noop */ }
     }
   }
 
@@ -222,9 +237,10 @@
   // opts.pageNum: 切り出すページ番号（D: ページ選択時は選択先頭ページに合わせる）。失敗時は null（呼び出し側は付けずに続行）。
   async function pdfToTitleBlockCrop(file, opts) {
     const o = Object.assign({}, DEFAULTS, opts || {});
+    let pdf; // finally で必ず destroy（worker側メモリ解放。返り値は base64 化済みで destroy 後も安全）
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, isEvalSupported: false /* FZ-2: CVE-2024-4367対策 */ }).promise;
+      pdf = await pdfjsLib.getDocument({ data: arrayBuffer, isEvalSupported: false /* FZ-2: CVE-2024-4367対策 */ }).promise;
       const pageNum = (Number.isInteger(o.pageNum) && o.pageNum >= 1 && o.pageNum <= pdf.numPages) ? o.pageNum : 1;
       const page = await pdf.getPage(pageNum);
       const scale = calcSafeScale(page, o.titleBlockScale || 4.0);
@@ -249,6 +265,8 @@
     } catch (e) {
       console.warn('表題欄クロップ生成に失敗（スキップ）:', e && e.message);
       return null;
+    } finally {
+      try { if (pdf) pdf.destroy(); } catch (e) { /* noop */ }
     }
   }
 
